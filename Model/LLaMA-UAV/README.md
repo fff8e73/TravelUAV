@@ -9,12 +9,8 @@
 
 ## Install
 Please follow the instructions below to install the required packages.
-1. Clone this repository
-```bash
-git clone git@github.com:wz7in/LLaMA-UAV.git
-```
 
-2. Install Package
+1. Install Package
 ```bash
 conda create -n llamauav python=3.10 -y
 conda activate llamauav
@@ -22,7 +18,7 @@ cd LLaMA-UAV
 pip install -e .
 ```
 
-3. Install additional packages for training cases
+2. Install additional packages for training cases
 ```bash
 pip install ninja
 pip install flash-attn=2.5.9.post1 --no-build-isolation
