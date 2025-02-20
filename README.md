@@ -1,5 +1,3 @@
-
-
 <div align="center">
 <h1>Towards Realistic UAV Vision-Language Navigation: Platform, Benchmark, and Methodology</h1>
 
@@ -9,6 +7,7 @@
 <a href='https://prince687028.github.io/OpenUAV/'><img src='https://img.shields.io/badge/Project_Page-TRAVEL-green' alt='Project Page'></a>
 <a href='https://huggingface.co/datasets/wangxiangyu0814/TravelUAV'><img src='https://img.shields.io/badge/Dataset-TRAVEL-blue'></a>
 <a href='https://huggingface.co/datasets/wangxiangyu0814/TravelUAV_env'><img src='https://img.shields.io/badge/Env-TRAVEL-blue'></a>
+
 </div>
 
 ## Contents
@@ -20,10 +19,12 @@
 - [Citation](#paper)
 
 ## News
+
 - **2025-01-25:** Paper, project page, code, data, envs and models are all released.
 
 # Introduction
-This work presents  **_TOWARDS REALISTIC UAV VISION-LANGUAGE NAVIGATION: PLATFORM, BENCHMARK, AND METHODOLOGY_**. We introduce a UAV simulation platform, an assistant-guided realistic UAV VLN benchmark, and an MLLM-based method to address the challenges in realistic UAV vision-language navigation.
+
+This work presents **_TOWARDS REALISTIC UAV VISION-LANGUAGE NAVIGATION: PLATFORM, BENCHMARK, AND METHODOLOGY_**. We introduce a UAV simulation platform, an assistant-guided realistic UAV VLN benchmark, and an MLLM-based method to address the challenges in realistic UAV vision-language navigation.
 
 # Dependencies
 
@@ -50,29 +51,61 @@ Additionally, to ensure compatibility with the AirSim Python API, apply the fix 
 # Preparation
 
 ## Data
+
 To prepare the dataset, please follow the instructions provided in the [Dataset Section](./Model/LLaMA-UAV/README.md#dataset) to construct the dataset.
 
 ## Model
-### GroundingDINO 
+
+### GroundingDINO
+
 Download the GroundingDINO model from the link [groundingdino_swint_ogc.pth](https://huggingface.co/ShilongLiu/GroundingDINO/resolve/main/groundingdino_swint_ogc.pth), and place the file in the directory `src/model_wrapper/utils/GroundingDINO/`.
+
 ### LLaMA-UAV
+
 To set up the model, refer to to the detailed [Model Setup](./Model/LLaMA-UAV/README.md).
 
 ## Simulator environments
+
 Download the simulator environments for various maps from [here](https://huggingface.co/datasets/wangxiangyu0814/TravelUAV_env).
 
+The file directory of environments is as follows:
+
+```
+├── carla_town_envs
+│   ├── Town01
+│   ├── Town02
+│   ├── Town03
+│   ├── ...
+├── closeloop_envs
+│   ├── Engine
+│   ├── ModularEuropean
+│   ├── ModularEuropean.sh
+│   ├── ModularPark
+│   ├── ModularPark.sh
+│   ├── ...
+├── extra_envs
+│   ├── BrushifyUrban
+│   ├── BrushifyCountryRoads
+│   ├── ...
+```
+
 # Usage
+
 1. setup simulator env server
 
-Before running the simulations, ensure the AirSim environment server is properly configured. 
+Before running the simulations, ensure the AirSim environment server is properly configured.
+
 > Update the env executable paths`env_exec_path_dict` relative to `root_path` in `AirVLNSimulatorServerTool.py`.
+
 ```bash
 cd airsim_plugin
 python AirVLNSimulatorServerTool.py --port 30000 --root_path /path/to/your/envs
 ```
+
 2. run close-loop simulation
 
 Once the simulator server is running, you can execute the dagger or evaluation script.
+
 ```bash
 # Dagger NYC
 bash scripts/dagger_NYC.sh

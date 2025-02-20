@@ -239,10 +239,6 @@ AIRSIM_SETTINGS_TEMPLATE = {
 }
 
 env_exec_path_dict = {
-    "NYC_dev": {
-        'bash_name': 'NYCEnvironmentMegapa',
-        'exec_path': './closeloop_envs',
-    },
     "NYCEnvironmentMegapa": {
         'bash_name': 'NYCEnvironmentMegapa',
         'exec_path': './closeloop_envs',
@@ -493,11 +489,7 @@ class EventHandler(object):
                 choose_env_exe_paths.append(None)
                 continue
             
-            res = glob.glob((str(SEARCH_ENVs_PATH / (scen_id + '.sh'))))
-            print(str(SEARCH_ENVs_PATH / (scen_id + '.sh')))
-            if len(res) > 0:
-                choose_env_exe_paths.append(res[0])
-            elif scen_id in env_exec_path_dict:
+            if scen_id in env_exec_path_dict:
                 env_info = env_exec_path_dict.get(scen_id)
                 res = os.path.join(args.root_path, env_info['exec_path'], env_info['bash_name'] + '.sh')
                 choose_env_exe_paths.append(res)
@@ -567,8 +559,8 @@ class EventHandler(object):
         KillPorts([port])
         
         scene_id, gpu_id = self.port_to_scene[port]
-        res = glob.glob((str(SEARCH_ENVs_PATH / (scene_id + '.sh'))))
-        env_path = res[0]
+        env_info = env_exec_path_dict.get(scene_id)
+        env_path = os.path.join(args.root_path, env_info['exec_path'], env_info['bash_name'] + '.sh')
         subprocess_execute = "bash {} -RenderOffscreen -NoSound -NoVSync -GraphicsAdapter={} -settings={} ".format(
                     env_path,
                     gpu_id,
@@ -691,8 +683,6 @@ if __name__ == '__main__':
     CWD_DIR = Path(str(os.path.abspath(__file__))).resolve()
     PROJECT_ROOT_DIR = CWD_DIR.parent.parent
     print("PROJECT_ROOT_DIR",PROJECT_ROOT_DIR)
-    SEARCH_ENVs_PATH = Path(args.root_path + '/envs/')
-    assert os.path.exists(str(SEARCH_ENVs_PATH)), 'error'
 
     gpu_list = []
     gpus = str(args.gpus).split(',') 
