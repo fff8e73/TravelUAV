@@ -53,6 +53,9 @@ Additionally, to ensure compatibility with the AirSim Python API, apply the fix 
 To prepare the dataset, please follow the instructions provided in the [Dataset Section](./Model/LLaMA-UAV/README.md#dataset) to construct the dataset.
 
 ## Model
+### GroundingDINO 
+Download the GroundingDINO model from the link [groundingdino_swint_ogc.pth](https://huggingface.co/ShilongLiu/GroundingDINO/resolve/main/groundingdino_swint_ogc.pth), and place the file in the directory `src/model_wrapper/utils/GroundingDINO/`.
+### LLaMA-UAV
 To set up the model, refer to to the detailed [Model Setup](./Model/LLaMA-UAV/README.md).
 
 ## Simulator environments

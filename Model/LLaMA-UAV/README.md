@@ -38,13 +38,14 @@ LLaMA-UAV
 ```
 ### Dataset
 <!-- training data prepara -->
-1. Download the dataset from [here](https://huggingface.co/datasets/wangxiangyu0814/TravelUAV)
-2. Generate the processed trajector data
+1. Download the dataset split info from [here](https://huggingface.co/datasets/wangxiangyu0814/TravelUAV_data_json)
+2. Download the dataset from [here](https://huggingface.co/datasets/wangxiangyu0814/TravelUAV)
+3. Generate the processed trajector data
 ```bash
 python tools/generate_merged_json.py --root_dir <path to your dataset>
 # By default, all maps are processed.
 ```
-3. Generate processed multi-view camera image tensor
+4. Generate processed multi-view camera image tensor
 ``` bash
 python tools/preprocess_image2tensor.py --root_dir <path to your dataset>
 # By default, all maps are processed.
