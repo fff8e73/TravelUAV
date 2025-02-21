@@ -30,8 +30,7 @@ We recommend users to download the pretrained weights from the following link [V
 ```
 LLaMA-UAV
 ├── model_zoo
-│   ├── LLM
-│   │   ├── vicuna-7b-v1,5
+│   ├── vicuna-7b-v1.5
 │   ├── LAVIS
 │   │   ├── eva_vit_g.pth
 │   │   ├── instruct_blip_vicuna7b_trimmed.pth
