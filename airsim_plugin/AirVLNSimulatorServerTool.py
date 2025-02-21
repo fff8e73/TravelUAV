@@ -680,8 +680,8 @@ if __name__ == '__main__':
 
     HOST = '127.0.0.1'
     PORT = int(args.port)
-    CWD_DIR = Path(str(os.path.abspath(__file__))).resolve()
-    PROJECT_ROOT_DIR = CWD_DIR.parent.parent
+    CWD_DIR = Path(str(os.path.abspath(__file__))).parent.resolve()
+    PROJECT_ROOT_DIR = CWD_DIR.parent
     print("PROJECT_ROOT_DIR",PROJECT_ROOT_DIR)
 
     gpu_list = []

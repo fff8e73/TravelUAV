@@ -13,7 +13,7 @@ import math
 
 
 sys.path.append(str(Path(str(os.getcwd())).resolve()))
-sys.path.append('/home/airport/airdrone/TravelUAV/LLaMA-UAV/')
+sys.path.append(str(Path(__file__).resolve().parents[3]/ 'Model' / 'LLaMA-UAV'))
 from llamavid.model.builder import load_pretrained_model
 from llamavid.model.vis_traj_arch import VisionTrajectoryGenerator
 from peft import PeftModel
