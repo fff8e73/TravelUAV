@@ -111,3 +111,5 @@ if __name__ == "__main__":
                      assist = assist,
                      train_env=train_env,
                      data_it=dagger_it)
+
+    train_env.delete_VectorEnvUtil()

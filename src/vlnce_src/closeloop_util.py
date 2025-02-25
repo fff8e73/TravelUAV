@@ -175,7 +175,7 @@ class DaggerBatchState:
                 if self.collisions[i]:
                     ep = ep[:-25]
                 save_to_dataset_dagger(ep, ori_path, dagger_it, self.teacher_after_collision_steps[i])
-            elif len(ep) < args.maxWaypoints * 5 // 10: # the dagger is not long enough, so we don't save this data
+            elif len(ep) < args.maxWaypoints * 5 // 10 and self.collisions[i] and not self.skips[i]: # the dagger is not long enough, so we don't save this data
                 self.skips[i] = True
         if all(self.dones):
             return True # terminate
