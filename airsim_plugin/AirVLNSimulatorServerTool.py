@@ -259,6 +259,10 @@ env_exec_path_dict = {
         'bash_name': 'ModularEuropean',
         'exec_path': './closeloop_envs',
     },
+    "ModernCityMap": {
+        'bash_name': 'ModernCityMap',
+        'exec_path': './closeloop_envs',
+    },
     "Carla_Town01": {
         'bash_name': 'CarlaUE4',
         'exec_path': './carla_town_envs/Town01/LinuxNoEditor',

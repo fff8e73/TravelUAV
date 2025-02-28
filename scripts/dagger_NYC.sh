@@ -12,7 +12,7 @@ CUDA_VISIBLE_DEVICES=0 python -u $root_dir/src/vlnce_src/dagger.py \
     --gpu_id 4 \
     --simulator_tool_port 25000 \
     --DDP_MASTER_PORT 80002 \
-    --batchSize 2 \
+    --batchSize 1 \
     --dagger_it 1 \
     --dagger_p 0.4 \
     --maxWaypoints 200 \
