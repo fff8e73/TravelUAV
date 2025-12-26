@@ -1,0 +1,35 @@
+Looking in indexes: https://download.pytorch.org/whl/cu121
+Collecting torch
+  Downloading https://download.pytorch.org/whl/cu121/torch-2.5.1%2Bcu121-cp310-cp310-linux_x86_64.whl (780.4 MB)
+     ━━━━━━━━━━━━━━━━━━━━ 780.4/780.4 MB 165.3 kB/s  0:17:39
+Collecting torchvision
+  Downloading https://download.pytorch.org/whl/cu121/torchvision-0.20.1%2Bcu121-cp310-cp310-linux_x86_64.whl (7.3 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━ 7.3/7.3 MB 119.6 kB/s  0:01:00
+Collecting torchaudio
+  Downloading https://download.pytorch.org/whl/cu121/torchaudio-2.5.1%2Bcu121-cp310-cp310-linux_x86_64.whl (3.4 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━ 3.4/3.4 MB 112.4 kB/s  0:00:30
+Collecting filelock (from torch)
+  Downloading filelock-3.20.0-py3-none-any.whl.metadata (2.1 kB)
+Collecting typing-extensions>=4.8.0 (from torch)
+  Downloading https://download.pytorch.org/whl/typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting networkx (from torch)
+  Downloading networkx-3.4.2-py3-none-any.whl.metadata (6.3 kB)
+Collecting jinja2 (from torch)
+  Downloading https://download.pytorch.org/whl/jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+Collecting fsspec (from torch)
+  Downloading fsspec-2025.12.0-py3-none-any.whl.metadata (10 kB)
+Collecting nvidia-cuda-nvrtc-cu12==12.1.105 (from torch)
+  Downloading https://download.pytorch.org/whl/cu121/nvidia_cuda_nvrtc_cu12-12.1.105-py3-none-manylinux1_x86_64.whl (23.7 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━ 23.7/23.7 MB 632.6 kB/s  0:00:54
+Collecting nvidia-cuda-runtime-cu12==12.1.105 (from torch)
+  Downloading https://download.pytorch.org/whl/cu121/nvidia_cuda_runtime_cu12-12.1.105-py3-none-manylinux1_x86_64.whl (823 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━ 823.6/823.6 kB 1.0 MB/s  0:00:01
+Collecting nvidia-cuda-cupti-cu12==12.1.105 (from torch)
+  Downloading https://download.pytorch.org/whl/cu121/nvidia_cuda_cupti_cu12-12.1.105-py3-none-manylinux1_x86_64.whl (14.1 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━ 14.1/14.1 MB 975.8 kB/s  0:00:14
+Collecting nvidia-cudnn-cu12==9.1.0.70 (from torch)
+  Downloading https://download.pytorch.org/whl/cu121/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl (664.8 MB)
+     ━━━━━━━━━━━━━━━━━━━━ 664.8/664.8 MB 739.1 kB/s  0:25:52
+Collecting nvidia-cublas-cu12==12.1.3.1 (from torch)
+  Downloading https://download.pytorch.org/whl/cu121/nvidia_cublas_cu12-12.1.3.1-py3-none-manylinux1_x86_64.whl (410.6 MB)
+     ━━━╸               87.3/410.6 MB 125.0 kB/s eta 0:43:07

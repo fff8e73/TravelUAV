@@ -241,63 +241,63 @@ AIRSIM_SETTINGS_TEMPLATE = {
 env_exec_path_dict = {
     "NYCEnvironmentMegapa": {
         'bash_name': 'NYCEnvironmentMegapa',
-        'exec_path': './closeloop_envs',
+        'exec_path': 'closeloop_envs',
     },
     "TropicalIsland": {
         'bash_name': 'TropicalIsland',
-        'exec_path': './closeloop_envs',
+        'exec_path': 'closeloop_envs',
     },
     "NewYorkCity": {
         'bash_name': 'NewYorkCity',
-        'exec_path': './closeloop_envs',
+        'exec_path': 'closeloop_envs',
     },
     "ModularPark": {
         'bash_name': 'ModularPark',
-        'exec_path': './closeloop_envs',
+        'exec_path': 'closeloop_envs',
     },
     "ModularEuropean": {
         'bash_name': 'ModularEuropean',
-        'exec_path': './closeloop_envs',
+        'exec_path': 'closeloop_envs',
     },
     "ModernCityMap": {
         'bash_name': 'ModernCityMap',
-        'exec_path': './closeloop_envs',
+        'exec_path': 'closeloop_envs',
     },
     "Carla_Town01": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town01/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town01/LinuxNoEditor',
     },
     "Carla_Town02": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town02/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town02/LinuxNoEditor',
     },
     "Carla_Town03": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town03/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town03/LinuxNoEditor',
     },
     "Carla_Town04": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town04/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town04/LinuxNoEditor',
     },
     "Carla_Town05": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town05/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town05/LinuxNoEditor',
     },
     "Carla_Town06": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town06/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town06/LinuxNoEditor',
     },
     "Carla_Town07": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town07/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town07/LinuxNoEditor',
     },
     "Carla_Town10HD": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town10HD/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town10HD/LinuxNoEditor',
     },
     "Carla_Town15": {
         'bash_name': 'CarlaUE4',
-        'exec_path': './carla_town_envs/Town15/LinuxNoEditor',
+        'exec_path': 'carla_town_envs/Town15/LinuxNoEditor',
     },
 }
 def create_drones(drone_num_per_env=1, show_scene=False, uav_mode=True) -> dict:
