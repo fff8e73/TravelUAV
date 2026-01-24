@@ -1,10 +1,17 @@
 import numpy as np
+import os
+import sys
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .multimodal_encoder.builder import build_vision_tower
+# Add the llamavid-archive directory to sys.path for proper imports
+llamavid_dir = os.path.join(os.path.dirname(__file__), "..")
+if llamavid_dir not in sys.path:
+    sys.path.insert(0, llamavid_dir)
+
+from model.multimodal_encoder.builder import build_vision_tower
 
 
 class MLP(nn.Module):

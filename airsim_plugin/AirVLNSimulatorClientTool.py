@@ -199,6 +199,11 @@ class AirVLNSimulatorClientTool:
             time.sleep(3 * len(self.machines_info[index]['open_scenes']) + 35)
             ip = result[1][0]
             ports = result[1][1]
+            # Convert bytes to string if needed (msgpackrpc may return bytes)
+            if isinstance(ip, bytes):
+                ip = ip.decode('utf-8')
+            if isinstance(ports, list):
+                ports = [p.decode('utf-8') if isinstance(p, bytes) else p for p in ports]
             self.airsim_ip = ip
             self.airsim_ports = ports
             assert str(ip) == str(socket_client.address._host), '打开场景失败'

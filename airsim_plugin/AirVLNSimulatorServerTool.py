@@ -489,10 +489,14 @@ class EventHandler(object):
         # search scene path 3
         choose_env_exe_paths = []
         for scen_id, gpu_id in scen_id_gpu_list:
+            # Convert bytes to string if needed
+            if isinstance(scen_id, bytes):
+                scen_id = scen_id.decode('utf-8')
+
             if str(scen_id).lower() == 'none':
                 choose_env_exe_paths.append(None)
                 continue
-            
+
             if scen_id in env_exec_path_dict:
                 env_info = env_exec_path_dict.get(scen_id)
                 res = os.path.join(args.root_path, env_info['exec_path'], env_info['bash_name'] + '.sh')
@@ -511,6 +515,12 @@ class EventHandler(object):
 
         p_s = []
         for index, (scen_id, gpu_id) in enumerate(scen_id_gpu_list):
+            # Convert bytes to string if needed
+            if isinstance(scen_id, bytes):
+                scen_id = scen_id.decode('utf-8')
+            if isinstance(gpu_id, bytes):
+                gpu_id = int(gpu_id.decode('utf-8'))
+
             # airsim settings 4
             airsim_settings = create_drones()
             airsim_settings['ApiServerPort'] = int(ports[index])
@@ -587,7 +597,9 @@ class EventHandler(object):
         )
         try:
             print(scen_id_gpu_list)
-            ip = ip
+            # Convert bytes to string if needed (msgpackrpc may send bytes)
+            if isinstance(ip, bytes):
+                ip = ip.decode('utf-8')
             for item in scen_id_gpu_list:
                 try:
                     item[0] = item[0]

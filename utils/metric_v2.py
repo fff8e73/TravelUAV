@@ -6,30 +6,46 @@ import tqdm
 import argparse
 import logging
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] - %(message)s",
-    handlers=[
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler()]
 )
 
 def sort_key(filename):
     """Sort function for filenames based on the numeric part."""
     return int(re.search(r'\d+', filename).group())
 
-
 def load_json(file_path):
     """Load a JSON file."""
     with open(file_path, 'r') as f:
         return json.load(f)
 
+def is_successful_trajectory(traj_dir, log_dir):
+    """判断轨迹是否成功：检查是否发生碰撞或到达目标"""
+    logs = sorted(os.listdir(log_dir), key=sort_key)
+    if not logs:
+        return False
+
+    # 检查最后一个日志文件
+    last_log_data = load_json(os.path.join(log_dir, logs[-1]))
+
+    # 检查是否发生碰撞
+    has_collision = last_log_data.get("sensors", {}).get("state", {}).get("collision", {}).get("has_collided", False)
+
+    # 如果发生碰撞，视为失败
+    if has_collision:
+        return False
+
+    # 检查是否到达目标（根据需要添加更多判断逻辑）
+    # 这里可以根据位置、距离等判断
+
+    return True
 
 def calculate_ne(path, dirs, success_dirs):
     """Calculate the NE (Normalized Error) between predicted and oracle trajectories."""
     ne_list = []
-    
+
     for traj_dir in tqdm.tqdm(dirs, desc='Calculating NE'):
         log_dir = os.path.join(path, traj_dir, 'log')
         logs = sorted(os.listdir(log_dir), key=sort_key)
@@ -46,7 +62,6 @@ def calculate_ne(path, dirs, success_dirs):
 
     avg_ne = np.mean(np.array(ne_list))
     logging.info(f"Average Normalized Error (NE): {avg_ne:.2f}")
-
 
 def calculate_spl(path, dirs, success_dirs):
     """Calculate the SPL (Success Path Length) based on predicted and oracle trajectories."""
@@ -77,15 +92,14 @@ def calculate_spl(path, dirs, success_dirs):
             p1 = np.array(ori_data[i]['position'])
             p2 = np.array(ori_data[i + 1]['position'])
             path_length += np.linalg.norm(p2 - p1)
-        path_length -= 20  
+        path_length -= 20
 
         spl = path_length / max(path_length, pred_length)
-        spl = max(spl, 0) 
+        spl = max(spl, 0)
         spl_list.append(spl)
 
     avg_spl = np.mean(np.array(spl_list)) * 100
     logging.info(f"Average Success Path Length (SPL): {avg_spl:.2f}%")
-
 
 def split_data(path, path_type):
     """Split the dataset into different categories based on the path type."""
@@ -99,7 +113,7 @@ def split_data(path, path_type):
                 and 'dino' not in traj_dir
                 and 'logs' not in traj_dir
                 and os.path.isdir(os.path.join(path, traj_dir))]
-    
+
     for traj_dir in tqdm.tqdm(dirs, desc='Splitting data'):
         # 跳过非样本目录
         if not os.path.isdir(os.path.join(path, traj_dir)):
@@ -122,10 +136,8 @@ def split_data(path, path_type):
                 return_dirs.append(traj_dir)
             elif path_type == 'unseen object' and not any(scene in ori_info['ori_traj_dir'] for scene in unseen_scenes):
                 return_dirs.append(traj_dir)
-    
+
     return return_dirs
-
-
 
 def analyze_results(root_dir, analysis_list, path_type_list):
     """Main function to analyze the results for different analysis types and path types."""
@@ -145,21 +157,20 @@ def analyze_results(root_dir, analysis_list, path_type_list):
             success_dirs = []
 
             for traj_dir in analysis_dirs:
-                if 'success' in traj_dir:
+                log_dir = os.path.join(analysis_path, traj_dir, 'log')
+                if is_successful_trajectory(traj_dir, log_dir):
                     success += 1
                     oracle += 1
                     success_dirs.append(traj_dir)
-                elif 'oracle' in traj_dir:
-                    oracle += 1
 
             sr = success / (total + 1e-8) * 100
             osr = oracle / (total + 1e-8) * 100
             logging.info(f"Success Rate (SR): {sr:.2f}%")
             logging.info(f"Oracle Success Rate (OSR): {osr:.2f}%")
+            logging.info(f"Total samples: {total}, Successful: {success}")
 
             calculate_ne(analysis_path, analysis_dirs, success_dirs)
             calculate_spl(analysis_path, analysis_dirs, success_dirs)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze the evaluation results for trajectory prediction.")

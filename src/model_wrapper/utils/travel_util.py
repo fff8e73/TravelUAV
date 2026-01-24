@@ -12,8 +12,8 @@ import numpy as np
 import math
 
 
-sys.path.append(str(Path(str(os.getcwd())).resolve()))
-sys.path.append(str(Path(__file__).resolve().parents[3]/ 'Model' / 'LLaMA-UAV'))
+# sys.path.append(str(Path(str(os.getcwd())).resolve()))
+# sys.path.append(str(Path(__file__).resolve().parents[3]/ 'Model' / 'LLaMA-UAV'))
 # from llamavid.model.builder import load_pretrained_model
 # from llamavid.model.vis_traj_arch import VisionTrajectoryGenerator
 # from peft import PeftModel
@@ -23,16 +23,51 @@ sys.path.append(str(Path(__file__).resolve().parents[3]/ 'Model' / 'LLaMA-UAV'))
 #     WAYPOINT_INPUT_TOKEN, WAYPOINT_LABEL_TOKEN, DEFAULT_HISTORY_TOKEN, DEFAULT_WP_TOKEN
 # )
 # from llamavid import conversation as conversation_lib
-from src.model_wrapper.llamavid_adapter import (
-    load_pretrained_model,
-    VisionTrajectoryGenerator,
-    conversation_lib,
-    DEFAULT_IMAGE_PATCH_TOKEN,
-    DEFAULT_IM_START_TOKEN,
-    DEFAULT_IM_END_TOKEN,
-    WAYPOINT_LABEL_TOKEN,
+
+sys.path.append(str(Path(str(os.getcwd())).resolve()))
+sys.path.append(str(Path(__file__).resolve().parents[3]/ 'Model' / 'LLaMA-UAV'))
+
+# ===== llamavid 已被删除（按用户要求） =====
+# 为避免导入时报错，提供清晰的占位符和 guard；
+# 如果要恢复 llamavid 的功能，请把 archive/llamavid-backup 恢复回原位，或重新安装该包。
+from types import SimpleNamespace
+from peft import PeftModel
+
+LLAMAVID_AVAILABLE = False
+
+# 移除 llava 依赖（已不再使用）
+# from llava.mm_utils import tokenizer_image_token, get_model_name_from_path
+
+def _llamavid_missing(name: str):
+    raise RuntimeError(
+        f\"功能 '{name}' 依赖已删除的模块 'llamavid'。要启用该功能，请恢复 llamavid 源码（archive/llamavid-backup）或安装相应包。\"\n    )
+
+# 占位符：load_pretrained_model / VisionTrajectoryGenerator 在被调用时会提示错误
+load_pretrained_model = None
+VisionTrajectoryGenerator = None
+
+# 最小 conversation stub，供代码在 import/检查 时引用
+conversation_lib = SimpleNamespace()
+conversation_lib.default_conversation = SimpleNamespace(
+    version='', system='', roles=['human', 'gpt'], sep='\\n\\n', sep2='\\n\\n',
+    copy=lambda: SimpleNamespace(version='', system='', roles=['human','gpt'], sep='\\n\\n', sep2='\\n\\n', messages=[])
 )
+
+# 常量默认值（若你需训练/推理则应恢复真实常量/processor）
+IGNORE_INDEX = -100
+DEFAULT_IMAGE_TOKEN = '<image>'
+DEFAULT_IM_START_TOKEN = '<im_start>'
+DEFAULT_IM_END_TOKEN = '<im_end>'
+WAYPOINT_INPUT_TOKEN = 2
+WAYPOINT_LABEL_TOKEN = 3
+DEFAULT_HISTORY_TOKEN = '<history>'
+DEFAULT_WP_TOKEN = '<wp>'
+# ===== end llamavid stubs =====
 def load_model(args):
+    if load_pretrained_model is None:
+    raise RuntimeError(
+        "llamavid 已从仓库中删除，无法加载 LLM 模型，请恢复 llamavid 源码或安装相应包以启用该功能."
+    )
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, _ = load_pretrained_model(model_path, args.model_base, model_name)
@@ -52,6 +87,10 @@ def load_model(args):
     return tokenizer, model, image_processor
 
 def load_traj_model(model_args):
+    if VisionTrajectoryGenerator is None:
+    raise RuntimeError(
+        "llamavid 的 VisionTrajectoryGenerator 不可用：llamavid 已被删除。恢复源码或提供替代实现以加载轨迹模型。"
+    )
     vision_config = generate_vision_tower_config(model_args.vision_tower, model_args.image_processor)
     config = transformers.AutoConfig.from_pretrained(vision_config, trust_remote_code=True)
     traj_model = VisionTrajectoryGenerator(config)
