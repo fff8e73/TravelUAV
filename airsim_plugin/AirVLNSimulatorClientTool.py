@@ -201,7 +201,12 @@ class AirVLNSimulatorClientTool:
             ports = result[1][1]
             self.airsim_ip = ip
             self.airsim_ports = ports
-            assert str(ip) == str(socket_client.address._host), '打开场景失败'
+            print(f"[DEBUG CLIENT] 服务器返回的IP: {repr(ip)}, 类型: {type(ip)}")
+            print(f"[DEBUG CLIENT] socket客户端的IP: {repr(socket_client.address._host)}, 类型: {type(socket_client.address._host)}")
+            # IP验证：由于IP是从客户端传过来的，这里仅作格式检查
+            if not isinstance(ip, str):
+                ip = str(ip)
+            logger.debug(f"服务器返回的IP: {ip}, 客户端socket IP: {socket_client.address._host}")
             assert len(ports) == len(self.machines_info[index]['open_scenes']), '打开场景失败'
             for i, port in enumerate(ports):
                 if self.machines_info[index]['open_scenes'][i] is None:

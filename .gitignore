@@ -4,6 +4,8 @@ __pycache__
 *.egg-info
 dist
 
+# Directories
+archive/
 
 # Log
 *.log
@@ -31,3 +33,4 @@ ckpts*
 *.ipynb
 src/model_wrapper/utils/GroundingDINO/groundingdino_swint_ogc.pth
 src/model_wrapper/utils/__pycache__
+

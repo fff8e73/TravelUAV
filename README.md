@@ -1,135 +1,238 @@
-<div align="center">
-<h1>Towards Realistic UAV Vision-Language Navigation: Platform, Benchmark, and Methodology</h1>
+# TravelUAV Benchmark 外部模型接口 - 快速开始
 
-<image src="./header.png" width="70%">
+> 🚁 为外部模型提供标准化的无人机视觉导航评测接口
 
-<a href="https://arxiv.org/abs/2410.07087"><img src='https://img.shields.io/badge/arXiv-TRAVEL: UAV VLN Platform, Benchmark, and Methodology-red' alt='Paper PDF'></a>
-<a href='https://prince687028.github.io/Travel/'><img src='https://img.shields.io/badge/Project_Page-TRAVEL-green' alt='Project Page'></a>
-<a href='https://huggingface.co/datasets/wangxiangyu0814/TravelUAV'><img src='https://img.shields.io/badge/Dataset-TRAVEL-blue'></a>
-<a href='https://huggingface.co/datasets/wangxiangyu0814/TravelUAV_env'><img src='https://img.shields.io/badge/Env-TRAVEL-blue'></a>
+---
 
-</div>
+## 📖 简介
 
-## Contents
+TravelUAV Benchmark 提供了一个基于HTTP的Client-Server接口，允许外部研究者使用自己的模型在TravelUAV上进行评测，而无需修改Benchmark代码或了解内部实现细节。
 
-- [Introduction](#introduction)
-- [Dependencies](#dependencies)
-- [Preparation](#prepare-the-data)
-- [Usage](#usage)
-- [Citation](#paper)
+**核心特点**:
+- ✅ 完全解耦：Benchmark和模型独立部署
+- ✅ 语言无关：Server可用任何语言实现
+- ✅ 简单易用：只需实现2个HTTP接口
+- ✅ 参考设计：基于Isaac-Drone-Navigation-Benchmark
 
-## News
-- **2025-05-22:** We release UAV-Flow, the first real-world benchmark for language-conditioned UAV imitation learning. (project page: https://prince687028.github.io/UAV-Flow)
-- **2025-01-25:** Paper, project page, code, data, envs and models are all released.
+---
 
-# Introduction
+## 🚀 快速开始
 
-This work presents **_TOWARDS REALISTIC UAV VISION-LANGUAGE NAVIGATION: PLATFORM, BENCHMARK, AND METHODOLOGY_**. We introduce a UAV simulation platform, an assistant-guided realistic UAV VLN benchmark, and an MLLM-based method to address the challenges in realistic UAV vision-language navigation.
+### 前置要求
 
-# Dependencies
+- Python 3.8+
+- AirSim仿真环境
+- 必需的Python包：`fastapi`, `json_numpy`, `requests`, `numpy`
 
-### Create `llamauav` environment
+### 步骤1: 安装依赖
 
 ```bash
-conda create -n llamauav python=3.10 -y
-conda activate llamauav
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+conda create -n openuav python=3.10 -y
+conda activate openuav
+
+# 安装PyTorch（用于基础数据处理）
+pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128
+
+# 安装接口必需的依赖（不包含模型相关）
+pip install -r requirements_interface.txt
 ```
 
-## Install LLaMA-UAV model
+**依赖说明**:
+- `fastapi`: 现代化的HTTP服务器框架（Server端）
+- `uvicorn`: ASGI服务器
+- `json_numpy`: numpy数组的JSON序列化
+- `requests`: HTTP客户端（Client端）
+- `numpy`, `opencv-python`, `scipy`, `pandas`: 数据处理
+- `airsim`: AirSim Python API
+- `tqdm`, `pyyaml`, `pillow`: 工具库
 
-You can follow [LLaMA-UAV](./Model/LLaMA-UAV/README.md#install) to install the llm dependencies.
+### 步骤2: 启动AirSim仿真环境
 
-### Install other dependencies listed in the requirements file
+**⚠️ 重要**: 在运行评测之前，必须先启动AirSim仿真服务器！
 
 ```bash
-pip install -r requirement.txt
+cd ~/TravelUAV/airsim_plugin
+python AirVLNSimulatorServerTool.py --port 30000 --root_path /sim/data/TravelUAV_data/sim_envs
 ```
 
-Additionally, to ensure compatibility with the AirSim Python API, apply the fix mentioned in the [AirSim issue](https://github.com/microsoft/AirSim/issues/3333#issuecomment-827894198)
+**说明**:
+- `--port 30000`: AirSim服务器端口（默认30000）
+- `--root_path`: 仿真环境数据路径
 
-# Preparation
-
-## Data
-
-To prepare the dataset, please follow the instructions provided in the [Dataset Section](./Model/LLaMA-UAV/README.md#dataset) to construct the dataset.
-
-## Model
-
-### GroundingDINO
-
-Download the GroundingDINO model from the link [groundingdino_swint_ogc.pth](https://huggingface.co/ShilongLiu/GroundingDINO/resolve/main/groundingdino_swint_ogc.pth), and place the file in the directory `src/model_wrapper/utils/GroundingDINO/`.
-
-### LLaMA-UAV
-
-To set up the model, refer to to the detailed [Model Setup](./Model/LLaMA-UAV/README.md).
-
-## Simulator environments
-
-Download the simulator environments for various maps from [here](https://huggingface.co/datasets/wangxiangyu0814/TravelUAV_env).
-
-The file directory of environments is as follows:
-
+**预期输出**:
 ```
-├── carla_town_envs
-│   ├── Town01
-│   ├── Town02
-│   ├── Town03
-│   ├── ...
-├── closeloop_envs
-│   ├── Engine
-│   ├── ModularEuropean
-│   ├── ModularEuropean.sh
-│   ├── ModularPark
-│   ├── ModularPark.sh
-│   ├── ...
-├── extra_envs
-│   ├── BrushifyUrban
-│   ├── BrushifyCountryRoads
-│   ├── ...
+[AirSim] Starting simulator server on port 30000...
+[AirSim] Loading environments from /sim/data/TravelUAV_data/sim_envs
+[AirSim] Server ready!
 ```
 
-# Usage
+### 步骤3: 启动外部模型服务器
 
-1. setup simulator env server
-
-Before running the simulations, ensure the AirSim environment server is properly configured.
-
-> Update the env executable paths`env_exec_path_dict` relative to `root_path` in `AirVLNSimulatorServerTool.py`.
+在**新的终端**中启动你的模型服务器：
 
 ```bash
-cd airsim_plugin
-python AirVLNSimulatorServerTool.py --port 30000 --root_path /path/to/your/envs
+cd ~/TravelUAV
+python server/travel_model_server.py --host 0.0.0.0 --port 9010
 ```
 
-2. run close-loop simulation
+**预期输出**:
+```
+⏳ Loading External Model...
+✅ Model Loaded Successfully!
+🚀 TravelUAV Model Server running on 0.0.0.0:9010
+📡 Endpoints:
+   - POST /reset       : Reset episode state
+   - POST /act         : Single inference
+   - POST /act_batch   : Batch inference
+   - GET  /health      : Health check
+```
 
-Once the simulator server is running, you can execute the dagger or evaluation script.
+**测试服务器连通性**:
+```bash
+curl http://127.0.0.1:9010/health
+```
+
+### 步骤4: 运行Benchmark评测
+
+在**第三个终端**中运行评测脚本：
+
+**使用便捷脚本**
 
 ```bash
-# Dagger NYC
-bash scripts/dagger_NYC.sh
-# Eval
-bash scripts/eval.sh
-bash scripts/metrics.sh
+cd ~/TravelUAV
+bash scripts/eval_http.sh
 ```
 
-# Paper
+**预期输出**:
+```
+🔗 [HttpClient] Connecting to server: http://127.0.0.1:9010
+🔧 Initializing evaluation environment...
+🌐 Initializing HTTP Client: http://127.0.0.1:9010
+🤖 Assist setting: always_help=False, use_gt=False
+🚀 Starting HTTP Client Evaluation (Total: 100 episodes)
+[HttpClient] Reset env_id=0 successfully
+Step: 0 	 Completed: 0 / 100
+...
+✅ All episodes completed!
+🎉 Evaluation completed successfully!
+```
 
-If you find this project useful, please consider citing: [paper](https://arxiv.org/abs/2410.07087):
+---
+
+## 📂 完整工作流程
 
 ```
-@misc{wang2024realisticuavvisionlanguagenavigation,
-      title={Towards Realistic UAV Vision-Language Navigation: Platform, Benchmark, and Methodology},
-      author={Xiangyu Wang and Donglin Yang and Ziqin Wang and Hohin Kwan and Jinyu Chen and Wenjun Wu and Hongsheng Li and Yue Liao and Si Liu},
-      year={2024},
-      eprint={2410.07087},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2410.07087},
+┌─────────────────────────────────────────────────────────────┐
+│  终端1: AirSim仿真环境                                        │
+│  $ cd airsim_plugin                                          │
+│  $ python AirVLNSimulatorServerTool.py --port 30000 \        │
+│      --root_path /sim/data/TravelUAV_data/sim_envs          │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ 提供仿真环境
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  终端3: TravelUAV Benchmark (Client)                         │
+│  $ python src/vlnce_src/eval_http.py \                      │
+│      --server_url http://127.0.0.1:9010                     │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ HTTP请求
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  终端2: 外部模型服务器 (Server)                               │
+│  $ python server/travel_model_server.py --port 9010         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📊 评估结果
+
+评测完成后，结果会保存在 `args.eval_save_path` 指定的目录中，包括：
+
+- **指标文件**: Success Rate (SR), SPL, Distance to Goal等
+- **轨迹文件**: 每个episode的完整轨迹
+- **日志文件**: 详细的评测日志
+
+---
+
+## 🐛 常见问题排查
+
+### 问题1: AirSim连接失败
+
+**错误信息**:
+```
+AssertionError: error port
+```
+
+**解决方案**:
+1. 确认AirSim服务器已启动（步骤2）
+2. 检查端口30000是否被占用：`lsof -i :30000`
+3. 确认防火墙未阻止端口
+
+### 问题2: 模型服务器连接失败
+
+**错误信息**:
+```
+[HttpClient] Query failed for batch 0: Connection refused
+```
+
+**解决方案**:
+1. 确认模型服务器已启动（步骤3）
+2. 测试连通性：`curl http://127.0.0.1:9010/health`
+3. 检查端口9010是否被占用：`lsof -i :9010`
+
+### 问题3: 请求超时
+
+**错误信息**:
+```
+[HttpClient] Query failed: Timeout
+```
+
+**解决方案**:
+1. 增加超时时间：`--timeout 600`
+2. 优化模型推理速度
+3. 检查GPU是否可用
+
+### 问题4: 图像数据传输慢
+
+**解决方案**:
+1. 确保Client和Server在同一台机器上（使用localhost）
+2. 考虑降低图像分辨率
+3. 使用批量推理接口（`/act_batch`）
+
+---
+## 🔄 接口更新计划（2026-02-04）
+
+### 更新内容
+
+#### 1. **动作格式变更**
+参考 Isaac-Drone-Navigation-Benchmark，接口返回格式改为相对位移：
+
+**新格式**:
+```python
+{
+    "action": [[dx1, dy1, dz1, dyaw1],
+               [dx2, dy2, dz2, dyaw2],
+               ...
+               [dxN, dyN, dzN, dyawN]]  # shape: [N, 4]
 }
 ```
 
-# Acknowledgement
+**坐标系定义**:
+- `dx`: 前后位移 (+前, -后)
+- `dy`: 左右位移 (+左, -右)
+- `dz`: 垂直位移 (+上, -下)
+- `dyaw`: 偏航角增量 (弧度，逆时针为正)
 
-This repository is partly based on [AirVLN](https://github.com/AirVLN/AirVLN) and [LLaMA-VID](https://github.com/dvlab-research/LLaMA-VID) repositories.
+**说明**:
+- 返回 `[N, 4]` 的 numpy.array，N 是步数
+- 每一步的 action 是**相对于上一步**的相对位置
+- Client 负责将相对位移转换为世界坐标航点
+
+#### 2. **框架迁移**
+- 从 Flask 迁移到 FastAPI
+- 提升性能和异步支持
+- 更好的类型检查和文档生成
+

@@ -84,7 +84,8 @@ class ModelArguments:
     
     
 parser = transformers.HfArgumentParser((CommonArguments, ModelArguments, DataArguments))
-args, model_args, data_args = parser.parse_args_into_dataclasses()
+# 允许未知参数（例如 eval_http.py 的 --server_url 和 --timeout）
+args, model_args, data_args = parser.parse_args_into_dataclasses(return_remaining_strings=True)[:3]
 
 args.make_dir_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
 args.logger_file_name = '{}/workdir/{}/logs/{}_{}.log'.format(args.project_prefix, args.run_type, args.collect_type, args.make_dir_time)

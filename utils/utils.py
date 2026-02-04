@@ -2,7 +2,14 @@ import os
 
 import torch
 import torch.distributed as dist
-from src.common.param import args
+
+# 尝试导入完整的参数配置，如果失败则使用None
+# 这样可以让utils在没有transformers的情况下也能工作
+try:
+    from src.common.param import args
+except (ImportError, ModuleNotFoundError):
+    # 如果导入失败，args将在后续被设置
+    args = None
 
 
 def is_dist_avail_and_initialized():
@@ -35,10 +42,12 @@ def init_distributed_mode():
         gpu = int(os.environ['LOCAL_RANK'])
     else:
         print('Not using distributed mode')
-        args.DistributedDataParallel = False
+        if args is not None:
+            args.DistributedDataParallel = False
         return
 
-    args.DistributedDataParallel = True
+    if args is not None:
+        args.DistributedDataParallel = True
 
     torch.cuda.set_device(gpu)
     print('distributed init (rank {}, word {})'.format(rank, world_size), flush=True)
@@ -52,14 +61,18 @@ def init_distributed_mode():
 
 
 def manual_init_distributed_mode(rank, world_size, local_rank):
-    args.DistributedDataParallel = True
-    args.batchSize = 1
+    if args is not None:
+        args.DistributedDataParallel = True
+        args.batchSize = 1
 
     gpu = local_rank
     torch.cuda.set_device(gpu)
 
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = str(args.DDP_MASTER_PORT)
+    if args is not None:
+        os.environ['MASTER_PORT'] = str(args.DDP_MASTER_PORT)
+    else:
+        os.environ['MASTER_PORT'] = '20001'  # 默认端口
     os.environ["WORLD_SIZE"] = str(world_size)
     os.environ["RANK"] = str(rank)
     os.environ['LOCAL_RANK'] = str(local_rank)
@@ -118,5 +131,4 @@ def FromPortGetPid(port: int):
         pass
 
     return pid
-
 

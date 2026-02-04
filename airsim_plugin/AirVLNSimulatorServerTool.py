@@ -587,10 +587,10 @@ class EventHandler(object):
         )
         try:
             print(scen_id_gpu_list)
-            ip = ip
+            ip = ip.decode('utf-8') if isinstance(ip, bytes) else ip
             for item in scen_id_gpu_list:
                 try:
-                    item[0] = item[0]
+                    item[0] = item[0].decode('utf-8') if isinstance(item[0], bytes) else item[0]
                 except:
                     pass
                 # item[0] = item[0].decode('utf-8')
@@ -656,7 +656,7 @@ def serve(daemon=False):
         return addr, server, thread
     except Exception as err:
         print("error",err)
-        pass
+        return None, None, None
 
 
 if __name__ == '__main__':
@@ -696,5 +696,8 @@ if __name__ == '__main__':
 
 
     addr, server, thread = serve()
+    if addr is None:
+        print("Failed to start server. Port may be in use.")
+        sys.exit(1)
     print(f"start listening \t{addr._host}:{addr._port}")
 
