@@ -1,6 +1,15 @@
 """
-TravelUAV Benchmark - HTTP Client 评测脚本
-用于连接外部模型服务器进行评测，不依赖本地模型
+TravelUAV Benchmark - HTTP Client 评测入口。
+
+本文件负责把「AirSim 环境」与「外部 HTTP 模型服务」连接起来，
+在不加载本地模型权重的情况下完成闭环评测。
+
+核心流程：
+1) 从评测集取 batch；
+2) 将观测发送给 HTTP 服务，获取航点与 stop 信号；
+3) 将航点下发到 AirSim 执行动作；
+4) 回收新观测并更新 episode 状态；
+5) 达到终止条件时保存轨迹并进入下一 batch。
 """
 import os
 from pathlib import Path
@@ -28,8 +37,6 @@ from src.model_wrapper.http_client import HttpClient
 from src.common.param import args, model_args, data_args
 # 导入 AirSim 环境接口
 from env_uav import AirVLNENV
-# 导入助手模块
-from assist import Assist
 # 导入闭环评测工具类
 from src.vlnce_src.closeloop_util import (
     EvalBatchState, BatchIterator, setup, CheckPort,
@@ -37,50 +44,63 @@ from src.vlnce_src.closeloop_util import (
 )
 
 
-def eval_http(http_client: HttpClient, assist: Assist, eval_env: AirVLNENV, eval_save_dir: str):
+def eval_http(http_client: HttpClient, eval_env: AirVLNENV, eval_save_dir: str):
     """
-    HTTP客户端评测函数 - 完全不依赖本地模型
+    HTTP 客户端评测主循环（不依赖本地模型推理）。
 
     :param http_client: HTTP客户端，用于连接外部模型服务器
-    :param assist: 助手对象，用于生成提示
     :param eval_env: AirSim 环境对象
-    :param eval_save_dir: 结果保存路径
+    :param eval_save_dir: 结果保存路径（当前函数中主要由下游状态管理器使用）
+
+    说明：
+    - `episodes`/`collisions`/`target_positions` 由 `EvalBatchState` 统一维护；
+    - 终止判定由 `check_batch_termination` 负责；
+    - 指标更新由 `update_metric` 负责。
     """
-    # HTTP客户端设置为评估模式（实际无操作，仅为接口兼容）
+    # 与本地模型接口对齐：显式切到 eval 模式。
+    # 对 HTTP 客户端来说通常是空操作，但能保持调用约定一致。
     http_client.eval()
 
-    # 初始化数据迭代器
+    # 统计评测集规模，用于进度条展示。
     dataset = BatchIterator(eval_env)
     end_iter = len(dataset)
     pbar = tqdm.tqdm(total=end_iter)
 
     logger.info(f"🚀 Starting HTTP Client Evaluation (Total: {end_iter} episodes)")
 
-    # --- 外层循环：遍历所有 Batch ---
+    # ---------------------------
+    # 外层循环：按 batch 处理样本
+    # ---------------------------
     while True:
-        # 1. 获取下一个 Mini-Batch
+        # 1) 拉取一个新的 batch；无数据时结束全量评测。
         env_batchs = eval_env.next_minibatch()
 
         if env_batchs is None:
             logger.info("✅ All episodes completed!")
             break
 
-        # 2. 初始化 Batch 状态管理器
+        # 2) 初始化当前 batch 的状态容器。
+        #    这里会触发环境 reset，并初始化：
+        #    - episodes（轨迹缓存）
+        #    - dones/collisions/success 等标志位
+        #    - target_positions 等评测上下文
         batch_state = EvalBatchState(
             batch_size=eval_env.batch_size,
             env_batchs=env_batchs,
-            env=eval_env,
-            assist=assist
+            env=eval_env
         )
 
-        # 更新进度条
+        # 按样本数推进总体进度。
         pbar.update(n=eval_env.batch_size)
 
-        # 3. 通知Server重置状态（新Episode开始）
+        # 3) 通知外部服务：每个 env_id 开启新 episode。
+        #    episode_id 绑定到当前 batch 索引，避免跨样本串状态。
         for i in range(eval_env.batch_size):
             http_client.reset(env_id=i, episode_id=f"batch_{eval_env.index_data}_{i}")
 
-        # --- 内层循环：单步导航 ---
+        # ---------------------------
+        # 内层循环：按 step 执行导航
+        # ---------------------------
         for t in range(int(args.maxWaypoints) + 1):
             logger.info('Step: {} \t Completed: {} / {}'.format(
                 t,
@@ -88,37 +108,35 @@ def eval_http(http_client: HttpClient, assist: Assist, eval_env: AirVLNENV, eval
                 end_iter
             ))
 
-            # 4. 检查是否全部结束
+            # 4) 检查 batch 是否全部结束（成功、超步数、碰撞策略触发等）。
             is_terminate = batch_state.check_batch_termination(t)
             if is_terminate:
                 logger.info(f"Batch terminated at step {t}")
                 break
 
-            # 5. 获取助手提示
-            assist_notices = batch_state.get_assist_notices()
-
-            # 6. 调用HTTP客户端查询：发送观测，接收航点和停止信号
+            # 5) 调用外部服务推理：输入当前轨迹观测，输出下一段航点与 stop 预测。
             refined_waypoints, predict_dones = http_client.query_batch(
                 episodes=batch_state.episodes,
                 target_positions=batch_state.target_positions,
-                assist_notices=assist_notices
+                collisions=batch_state.collisions
             )
 
-            # 7. 更新停止信号
+            # 6) 写回模型 stop 预测，供后续 metric/终止逻辑使用。
             batch_state.predict_dones = predict_dones
 
-            # 8. 环境执行：将航点发送给 AirSim
+            # 7) 将航点下发到 AirSim 执行动作。
             eval_env.makeActions(refined_waypoints)
 
-            # 9. 获取新观测
+            # 8) 回收执行后的观测（含 done/collision/oracle_success 等状态）。
             outputs = eval_env.get_obs()
 
-            # 10. 更新状态
+            # 9) 更新 batch 状态缓存（轨迹、碰撞、距离等）。
             batch_state.update_from_env_output(outputs)
 
-            # 11. 计算指标
+            # 10) 更新评测指标并可能设置 done。
             batch_state.update_metric()
 
+    # 进度条关闭失败不影响主流程（兼容异常退出场景）。
     try:
         pbar.close()
     except:
@@ -130,7 +148,7 @@ def eval_http(http_client: HttpClient, assist: Assist, eval_env: AirVLNENV, eval
 if __name__ == "__main__":
     import argparse
 
-    # 解析命令行参数（只解析 HTTP 客户端特有的参数）
+    # 仅解析 HTTP 客户端特有参数；其余参数由项目参数系统处理。
     parser = argparse.ArgumentParser(description="TravelUAV HTTP Client Evaluation")
     parser.add_argument(
         "--server_url",
@@ -144,25 +162,25 @@ if __name__ == "__main__":
         default=300,
         help="HTTP request timeout in seconds"
     )
-    # 使用 parse_known_args 允许其他参数传递给 HfArgumentParser
+    # 允许未知参数透传，避免与上层 HfArgumentParser 冲突。
     cli_args, unknown = parser.parse_known_args()
 
-    # 从 args 中获取配置路径
+    # 从全局 args 读取数据路径与结果路径。
     eval_save_path = args.eval_save_path
     eval_json_path = args.eval_json_path
     dataset_path = args.dataset_path
 
-    # 创建保存目录
+    # 结果目录不存在则创建。
     if not os.path.exists(eval_save_path):
         os.makedirs(eval_save_path)
 
-    # 基础设置（随机种子等）
+    # 初始化随机种子、分布式上下文等运行环境。
     setup()
 
-    # 检查 AirSim 端口
+    # 启动前检查 AirSim 端口占用，防止多个任务冲突。
     assert CheckPort(), 'AirSim port connection error!'
 
-    # 初始化评测环境
+    # 构建评测环境（加载评测集、场景管理器等）。
     logger.info("🔧 Initializing evaluation environment...")
     eval_env = initialize_env_eval(
         dataset_path=dataset_path,
@@ -170,31 +188,27 @@ if __name__ == "__main__":
         eval_json_path=eval_json_path
     )
 
-    # 如果是分布式环境，销毁进程组
+    # 本脚本按单进程评测；若外部误初始化了分布式，这里主动清理。
     if is_dist_avail_and_initialized():
         torch.distributed.destroy_process_group()
 
+    # 显式关闭 DDP 标志，避免后续模块按分布式路径执行。
     args.DistributedDataParallel = False
 
-    # 初始化 HTTP 客户端（替代本地模型）
+    # 创建 HTTP 客户端（外部模型服务代理）。
     logger.info(f"🌐 Initializing HTTP Client: {cli_args.server_url}")
     http_client = HttpClient(
         server_url=cli_args.server_url,
         timeout=cli_args.timeout
     )
 
-    # 初始化助手
-    assist = Assist(always_help=args.always_help, use_gt=args.use_gt)
-    logger.info(f"🤖 Assist setting: always_help={args.always_help}, use_gt={args.use_gt}")
-
-    # 进入评测主循环
+    # 进入主评测循环。
     eval_http(
         http_client=http_client,
-        assist=assist,
         eval_env=eval_env,
         eval_save_dir=eval_save_path
     )
 
-    # 清理环境
+    # 主动释放向量化环境资源。
     eval_env.delete_VectorEnvUtil()
     logger.info("🧹 Environment cleaned up")

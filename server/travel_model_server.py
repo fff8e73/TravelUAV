@@ -1,27 +1,30 @@
 """
 TravelUAV Model Server
-外部模型服务器端实现 - 基于Flask
+外部模型服务器端实现 - 基于FastAPI（薄透传层）
+对齐 Isaac-Drone-Navigation-Benchmark 接口标准
 """
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
+import uvicorn
 import json_numpy
 import numpy as np
-import torch
 from typing import Dict, Any
 
 # 开启 numpy 序列化支持
 json_numpy.patch()
 
-app = Flask(__name__)
+app = FastAPI()
 
 # ============================================================
 # 全局变量：存储每个环境的状态
 # ============================================================
-# 用于存储每个 env_id 的历史状态（如果模型需要维护状态）
 episode_states = {}
 
 # ============================================================
 # [MODEL INIT] 在这里加载你的模型
 # ============================================================
+# 注意：模型本身已直接接受 A 标准 obs、直接输出 [N,4]
+# Server 仅做薄透传，不做格式转换
 print("⏳ Loading External Model...")
 
 # 示例：加载你的自定义模型
@@ -34,16 +37,17 @@ print("⏳ Loading External Model...")
 
 print("✅ Model Loaded Successfully!")
 
+
 # ============================================================
 # [RESET] 重置接口
 # ============================================================
-@app.route("/reset", methods=["POST"])
-def reset():
+@app.post("/reset")
+async def reset(request: Request):
     """
     重置接口：当新的 Episode 开始时调用
     作用：清空该环境的历史状态（Hidden State、History Buffer等）
     """
-    req = json_numpy.loads(request.data)
+    req = json_numpy.loads(await request.body())
     env_id = req.get("env_id", 0)
     episode_id = req.get("episode_id", "unknown")
 
@@ -60,182 +64,136 @@ def reset():
 
     print(f"[Server] Reset env_id={env_id}, episode_id={episode_id}")
 
-    return jsonify({"status": "ok"})
+    return {"status": "ok"}
+
 
 # ============================================================
-# [ACT] 核心推理接口
+# [ACT] 核心推理接口 - 薄透传层
 # ============================================================
-@app.route("/act", methods=["POST"])
-def act():
+@app.post("/act")
+async def act(request: Request):
     """
-    核心推理接口
+    核心推理接口 - 薄透传层
 
-    Input (JSON):
+    Input (A 标准 JSON):
         {
-            "observation": {
-                "rgb": [H, W, 3],                    # RGB图像
-                "depth": [H, W],                     # 深度图（可选）
-                "instruction": "...",                # 自然语言指令
-                "current_position": [x, y, z],       # 当前位置（世界坐标系）
-                "current_rotation": [[...], ...],    # 当前旋转矩阵 [3, 3]
-                "current_orientation": [qw,qx,qy,qz],# 当前朝向（四元数，可选）
-                "target_position": [x, y, z],        # 目标位置
-                "history_positions": [[x,y,z], ...], # 历史位置序列
-                "initial_rotation": [[...], ...],    # 起点旋转矩阵
-                "initial_position": [x, y, z],       # 起点位置
-                "assist_notice": "cruise",           # 助手提示
-                "timestep": 10                       # 当前时间步
-            }
+            "rgb": [H, W, 3],              # RGB图像
+            "depth": [H, W],               # 深度图（可选）
+            "instruction": "...",          # 自然语言指令
+            "step": int,                   # 当前 episode 已执行的步数
+            "compass": [yaw_rad],          # 相对朝向（可选）
+            "gps": [x, y],                 # 相对位置（可选）
+            "collision": bool,             # 是否碰撞（可选）
+            "assist_notice": "..."         # 助手提示（可选）
         }
 
-    Output (JSON):
+    Output (A 标准 JSON):
         {
-            "waypoints": [[x, y, z]],  # 下一个航点（世界坐标系）
-            "stop": false              # 是否到达目标
+            "action": [[dx, dy, dz, dyaw], ...]  # [N, 4] 相对动作
         }
+
+    注意：Server 不做任何格式转换，直接透传 obs 给模型，模型输出直接返回
     """
-    # 解析请求
-    req = json_numpy.loads(request.data)
-    obs = req["observation"]
-
-    # ========================================================
-    # [EXTRACT] 提取输入数据
-    # ========================================================
-    rgb_img = obs.get("rgb")                          # [H, W, 3]
-    depth = obs.get("depth")                          # [H, W]
-    instruction = obs.get("instruction", "")          # str
-    current_pos = np.array(obs.get("current_position", [0, 0, 0]))  # [x, y, z]
-    current_rot = np.array(obs.get("current_rotation", np.eye(3)))  # [3, 3]
-    target_pos = np.array(obs.get("target_position", [0, 0, 0]))    # [x, y, z]
-    history_positions = obs.get("history_positions", [])
-    assist_notice = obs.get("assist_notice", "cruise")
-    timestep = obs.get("timestep", 0)
-
-    # ========================================================
-    # [PREPROCESS] 数据预处理
-    # ========================================================
-    # 示例：计算相对坐标（局部坐标系）
-    initial_pos = np.array(obs.get("initial_position", current_pos))
-    initial_rot = np.array(obs.get("initial_rotation", np.eye(3)))
-
-    # 转换到相对起点的局部坐标系
-    relative_pos = current_rot.T @ (current_pos - initial_pos)
-    relative_target = current_rot.T @ (target_pos - initial_pos)
-
-    # 示例：图像预处理
-    # if rgb_img is not None:
-    #     tensor_img = torch.from_numpy(rgb_img).permute(2, 0, 1).float() / 255.0
-    #     tensor_img = tensor_img.unsqueeze(0).to("cuda")
-
-    # 示例：文本预处理
-    # inputs = tokenizer(instruction, return_tensors="pt").to("cuda")
+    # 解析请求（直接透传）
+    req = json_numpy.loads(await request.body())
+    obs = req  # A 标准 obs 直接作为模型输入
 
     # ========================================================
     # [INFERENCE] 模型推理
     # ========================================================
-    # 示例：调用你的模型
+    # 注意：这里应该调用实际的模型
+    # 示例：
     # with torch.no_grad():
-    #     pred_waypoint, pred_stop = model(
-    #         image=tensor_img,
-    #         instruction=inputs,
-    #         current_pos=relative_pos,
-    #         target_pos=relative_target,
-    #         history=history_positions
-    #     )
-    #     waypoint_local = pred_waypoint.cpu().numpy()[0]  # [x, y, z] 局部坐标
-    #     stop = pred_stop.item() > 0.5
+    #     pred_actions = model.predict(obs)  # → ndarray[N,4]
+    # response = {"action": pred_actions}
 
     # ========================================================
-    # [MOCK IMPLEMENTATION] 测试用的Mock实现
+    # [MOCK IMPLEMENTATION] 测试用的 Mock 实现
     # ========================================================
-    # 简单的几何导航：朝目标点移动
-    direction = target_pos - current_pos
-    dist = np.linalg.norm(direction)
+    # 模拟模型输出 [N, 4] 相对动作
+    # N = 16 (假设模型一次输出 16 步动作)
+    N = 16
+    pred_actions = np.zeros((N, 4), dtype=np.float32)
 
-    if dist > 0.5:
-        # 归一化方向，乘以步长（0.5米）
-        waypoint_world = current_pos + (direction / dist) * 0.5
-        stop = False
-        print(f"[Server] Step {timestep} | Dist: {dist:.2f}m | Moving towards target")
-    else:
-        # 到达目标
-        waypoint_world = target_pos
-        stop = True
-        print(f"[Server] Step {timestep} | Target Reached! (Dist: {dist:.2f}m)")
+    # 复杂的测试逻辑：根据 step 生成多样化的动作序列
+    step = obs.get("step", 0)
 
-    # ========================================================
-    # [POSTPROCESS] 后处理
-    # ========================================================
-    # 如果模型输出的是局部坐标，需要转换回世界坐标
-    # waypoint_world = current_rot @ waypoint_local + current_pos
+    # 模式1：每 20 步改变一次方向（前→左→右→后→前...循环）
+    direction_cycle = (step // 20) % 4  # 0,1,2,3 循环
 
-    # 限制航点范围（防止飞出地图）
-    # waypoint_world = np.clip(waypoint_world, -100, 100)
+    # 模式2：每 50 步执行一次"停止"（小位移）来测试 stop 判定
+    is_stop_phase = (step % 50) >= 45  # step 45-49 为停止阶段
 
-    # ========================================================
-    # [RETURN] 返回结果
-    # ========================================================
+    # 模式3：偶尔加入高度变化（每 30 步上升/下降）
+    height_change = (step % 60) < 30  # 前30步上升，后30步下降
+
+    # 模式4：加入微小的随机扰动（模拟真实模型的输出变化）
+    np.random.seed(step)  # 用 step 作为种子，保证可复现
+    random_noise = np.random.randn(N, 4) * 0.01  # 微小噪声
+
+    for i in range(N):
+        if is_stop_phase:
+            # 停止阶段：返回极小的位移（测试 stop 判定）
+            # 位移 < 1e-5 会被识别为 stop
+            pred_actions[i] = [
+                1e-6,   # dx (几乎为0)
+                1e-6,   # dy (几乎为0)
+                1e-6,   # dz (几乎为0)
+                0.0     # dyaw
+            ]
+        else:
+            # 正常运动阶段
+            if direction_cycle == 0:
+                # 向前
+                dx, dy = 0.1, 0.0
+            elif direction_cycle == 1:
+                # 向左
+                dx, dy = 0.0, 0.1
+            elif direction_cycle == 2:
+                # 向后
+                dx, dy = -0.1, 0.0
+            else:
+                # 向右
+                dx, dy = 0.0, -0.1
+
+            # 高度变化
+            dz = 0.02 if height_change else -0.02
+
+            # 微小偏航角变化
+            dyaw = 0.01 * ((step % 10) - 5) / 5  # -0.01 到 0.01 之间变化
+
+            # 加入随机噪声
+            pred_actions[i] = [
+                dx + random_noise[i, 0],
+                dy + random_noise[i, 1],
+                dz + random_noise[i, 2],
+                dyaw + random_noise[i, 3]
+            ]
+
+    # 构建响应（A 标准格式）
     response = {
-        "waypoints": [waypoint_world.tolist()],  # 返回列表格式
-        "stop": stop
+        "action": pred_actions
     }
 
-    return json_numpy.dumps(response)
+    # 返回（使用 Response 确保正确设置 media_type）
+    return Response(
+        content=json_numpy.dumps(response),
+        media_type="application/json"
+    )
 
-# ============================================================
-# [OPTIONAL] 批量推理接口（可选，用于提升性能）
-# ============================================================
-@app.route("/act_batch", methods=["POST"])
-def act_batch():
-    """
-    批量推理接口：一次处理多个观测
-
-    Input:
-        {
-            "observations": [obs1, obs2, ...]
-        }
-
-    Output:
-        {
-            "waypoints": [[x,y,z], [x,y,z], ...],
-            "stops": [false, false, true, ...]
-        }
-    """
-    req = json_numpy.loads(request.data)
-    observations = req["observations"]
-
-    batch_waypoints = []
-    batch_stops = []
-
-    for obs in observations:
-        # 复用 act() 的逻辑
-        # 这里简化处理，实际应该批量推理
-        result = act_single(obs)
-        batch_waypoints.append(result["waypoints"][0])
-        batch_stops.append(result["stop"])
-
-    return json_numpy.dumps({
-        "waypoints": batch_waypoints,
-        "stops": batch_stops
-    })
-
-def act_single(obs: Dict[str, Any]) -> Dict[str, Any]:
-    """单个观测的推理逻辑（供批量接口调用）"""
-    # 这里可以复用 act() 的逻辑
-    # 为了简化，这里只是示例
-    return {"waypoints": [[0, 0, 0]], "stop": False}
 
 # ============================================================
 # [HEALTH CHECK] 健康检查接口
 # ============================================================
-@app.route("/health", methods=["GET"])
-def health():
+@app.get("/health")
+async def health():
     """健康检查接口"""
-    return jsonify({
+    return {
         "status": "healthy",
         "model_loaded": True,
         "active_episodes": len(episode_states)
-    })
+    }
+
 
 # ============================================================
 # [MAIN] 启动服务器
@@ -243,17 +201,15 @@ def health():
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="TravelUAV Model Server")
+    parser = argparse.ArgumentParser(description="TravelUAV Model Server (FastAPI)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Server host")
     parser.add_argument("--port", type=int, default=9009, help="Server port")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
-    print(f"🚀 TravelUAV Model Server running on {args.host}:{args.port}")
+    print(f"🚀 TravelUAV Model Server (FastAPI) running on {args.host}:{args.port}")
     print(f"📡 Endpoints:")
     print(f"   - POST /reset       : Reset episode state")
-    print(f"   - POST /act         : Single inference")
-    print(f"   - POST /act_batch   : Batch inference")
+    print(f"   - POST /act         : Single inference (A标准 [N,4] 动作)")
     print(f"   - GET  /health      : Health check")
 
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    uvicorn.run(app, host=args.host, port=args.port)

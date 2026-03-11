@@ -2,7 +2,8 @@
 # 仅包含运行HTTP接口所需的最小依赖，不包含模型相关依赖
 
 # HTTP通信
-flask>=2.0.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
 json_numpy>=1.0.1
 requests>=2.25.0
 

@@ -199,14 +199,15 @@ class AirVLNSimulatorClientTool:
             time.sleep(3 * len(self.machines_info[index]['open_scenes']) + 35)
             ip = result[1][0]
             ports = result[1][1]
+
+            # 修复：正确处理 bytes 类型的 IP
+            if isinstance(ip, bytes):
+                ip = ip.decode('utf-8')
+            elif not isinstance(ip, str):
+                ip = str(ip)
+
             self.airsim_ip = ip
             self.airsim_ports = ports
-            print(f"[DEBUG CLIENT] 服务器返回的IP: {repr(ip)}, 类型: {type(ip)}")
-            print(f"[DEBUG CLIENT] socket客户端的IP: {repr(socket_client.address._host)}, 类型: {type(socket_client.address._host)}")
-            # IP验证：由于IP是从客户端传过来的，这里仅作格式检查
-            if not isinstance(ip, str):
-                ip = str(ip)
-            logger.debug(f"服务器返回的IP: {ip}, 客户端socket IP: {socket_client.address._host}")
             assert len(ports) == len(self.machines_info[index]['open_scenes']), '打开场景失败'
             for i, port in enumerate(ports):
                 if self.machines_info[index]['open_scenes'][i] is None:
@@ -307,6 +308,8 @@ class AirVLNSimulatorClientTool:
             state_sensor = State(airsim_client, )
             imu_sensor = Imu(airsim_client, imu_name='Imu')
             path = [airsim.Vector3r(*waypoint[0:3]) for waypoint in waypoints]
+            if len(path) == 0:
+                return {'states': [], 'collision': True}
             airsim_client.enableApiControl(True)
             airsim_client.armDisarm(True)
             airsim_client.simPause(False)
@@ -318,7 +321,7 @@ class AirVLNSimulatorClientTool:
                                 yaw_mode=yaw_mode, 
                                 lookahead=lookahead, 
                                 adaptive_lookahead=adaptive_lookahead)
-            target_idx = 5
+            target_idx = min(5, len(path))
             current_idx = 0
             pos_queue = deque(maxlen=20)
             start_time = time.perf_counter()
@@ -328,6 +331,9 @@ class AirVLNSimulatorClientTool:
                 time.sleep(0.005)
                 if time.perf_counter() - start_time > 5:
                     return None
+                if current_idx >= len(path):
+                    airsim_client.simPause(True)
+                    break
                 target = path[current_idx]
                 state_info = copy.deepcopy(state_sensor.retrieve())
                 imu_info = copy.deepcopy(imu_sensor.retrieve())
@@ -345,7 +351,7 @@ class AirVLNSimulatorClientTool:
                 if new_distance > distance:
                     results.append({'sensors': {'state': state_info, 'imu': imu_info}})
                     current_idx += 1
-                    if current_idx == target_idx:
+                    if current_idx >= target_idx:
                         airsim_client.simPause(True)
                         break
                     else:

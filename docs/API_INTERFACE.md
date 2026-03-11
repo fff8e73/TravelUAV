@@ -1,8 +1,8 @@
 # TravelUAV Benchmark 外部模型接口文档
 
-**版本**: 1.0
-**日期**: 2026-02-03
-**参考项目**: Isaac-Drone-Navigation-Benchmark
+**版本**: 2.1
+**日期**: 2026-03-10
+**参考项目**: Isaac-Drone-Navigation-Benchmark (对齐 A 标准)
 
 ---
 
@@ -70,23 +70,17 @@
 
 **Endpoint**: `POST /act`
 
-**Request**:
+**Request** (A 标准 7+1 字段):
 ```json
 {
-    "observation": {
-        "rgb": [H, W, 3],
-        "depth": [H, W],
-        "instruction": "Fly to the red ball",
-        "current_position": [x, y, z],
-        "current_rotation": [[r11, r12, r13], [r21, r22, r23], [r31, r32, r33]],
-        "current_orientation": [qw, qx, qy, qz],
-        "target_position": [x, y, z],
-        "history_positions": [[x1, y1, z1], [x2, y2, z2], ...],
-        "initial_rotation": [[...], [...], [...]],
-        "initial_position": [x, y, z],
-        "assist_notice": "cruise",
-        "timestep": 10
-    }
+    "rgb": [[R, G, B], ...],
+    "depth": [[depth], ...],
+    "instruction": "Fly to the red ball",
+    "step": 10,
+    "compass": [0.5],
+    "gps": [1.2, 0.8],
+    "collision": false,
+    "episode_id": "batch_0_0"
 }
 ```
 
@@ -94,24 +88,23 @@
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `rgb` | numpy.ndarray | 是 | RGB图像，shape: [H, W, 3]，前视相机 |
-| `depth` | numpy.ndarray | 否 | 深度图，shape: [H, W] |
+| `rgb` | numpy.ndarray | 是 | RGB图像，shape: [H, W, 3]，uint8 |
+| `depth` | numpy.ndarray | 否 | 深度图，shape: [H, W]，float32 |
 | `instruction` | str | 是 | 自然语言指令 |
-| `current_position` | list[float] | 是 | 当前位置 [x, y, z]，世界坐标系 |
-| `current_rotation` | list[list[float]] | 是 | 当前旋转矩阵 [3, 3] |
-| `current_orientation` | list[float] | 否 | 当前朝向四元数 [qw, qx, qy, qz] |
-| `target_position` | list[float] | 是 | 目标位置 [x, y, z]，世界坐标系 |
-| `history_positions` | list[list[float]] | 是 | 历史位置序列 |
-| `initial_rotation` | list[list[float]] | 是 | 起点旋转矩阵 [3, 3] |
-| `initial_position` | list[float] | 是 | 起点位置 [x, y, z] |
-| `assist_notice` | str | 否 | 助手提示，如 "cruise", "take off" |
-| `timestep` | int | 是 | 当前时间步 |
+| `step` | int | 是 | 当前步数 |
+| `compass` | numpy.ndarray | 否 | 相对朝向，shape: [1]，弧度，从 IMU rotation 提取 yaw |
+| `gps` | numpy.ndarray | 否 | 相对起点位置，shape: [2]，投影到起点局部坐标系的 [x, y] |
+| `collision` | bool | 否 | 是否碰撞 |
+| `episode_id` | str | 否 | Episode标识符，格式: `batch_{index_data}_{env_id}` |
 
-**Response**:
+**Response** (A 标准 [N,4] 相对动作):
 ```json
 {
-    "waypoints": [[x, y, z]],
-    "stop": false
+    "action": [
+        [0.1, 0.0, 0.0, 0.0],
+        [0.1, 0.0, 0.0, 0.0],
+        ...
+    ]
 }
 ```
 
@@ -119,8 +112,17 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `waypoints` | list[list[float]] | 下一个航点列表，通常只包含一个元素 [x, y, z]，世界坐标系 |
-| `stop` | bool | 是否到达目标（True表示停止导航） |
+| `action` | numpy.ndarray | 形状 [N, 4]，每行 [dx, dy, dz, dyaw]，N 由模型决定 |
+| `dx` | float | 局部坐标系下 +dx 表示前进方向位移（米） |
+| `dy` | float | 局部坐标系下 +dy 表示向左方向位移（米） |
+| `dz` | float | 局部坐标系下 +dz 表示向上方向位移（米） |
+| `dyaw` | float | 局部坐标系下 +dyaw 表示逆时针旋转增量（弧度） |
+
+**注意**: Server 返回的动作数量 N 是动态的，由模型自行决定。Client 端会根据 Server 返回的实际 N 值从 Buffer 中取出相应数量的动作进行处理。
+
+**停止信号**: 隐式判定，当 `sqrt(dx² + dy² + dz²) < threshold` 时视为停止（默认 threshold = 1e-5）
+
+Client 端会遍历 Server 返回的每一个动作，依次进行坐标转换并生成递进航点序列。遇到第一个满足停止条件的动作时停止遍历，剩余动作保留在 Buffer 中供后续使用。
 
 ---
 
@@ -145,8 +147,29 @@
 
 ### 坐标系说明
 
-1. **世界坐标系**: AirSim的全局坐标系，单位：米
-2. **局部坐标系**: 相对于起点的坐标系，需要Server端自行转换
+**NED 坐标系** (TravelUAV 采用):
+- +X: 北 (North)
+- +Y: 东 (East)
+- +Z: 下 (Down)
+
+**A 标准局部坐标系** (模型输出):
+- +dx: 前进方向
+- +dy: 左侧方向
+- +dz: 上方方向
+- +dyaw: 逆时针旋转
+
+**Client 端坐标转换**:
+Client 端 (`http_client.py`) 会将 A 标准的局部动作转换为世界坐标航点：
+```python
+# A 标准 → NED 世界坐标
+dx_airsim = dx
+dy_airsim = -dy  # A标准+左 → AirSim -右
+dz_airsim = -dz  # A标准+上 → AirSim -下
+
+delta_local = [dx_airsim, dy_airsim, dz_airsim]
+delta_world = current_rot @ delta_local
+waypoint_world = current_pos + delta_world
+```
 
 ### 坐标变换示例
 
@@ -174,13 +197,7 @@ waypoint_world = current_rot @ waypoint_local + current_pos
 
 ## 🚀 使用方法
 
-### 1. 安装依赖
-
-```bash
-pip install flask json_numpy requests numpy
-```
-
-### 2. 启动Server（外部模型侧）
+### 1. 启动Server（外部模型侧）
 
 ```bash
 cd /home/yyx/TravelUAV
@@ -191,15 +208,14 @@ python server/travel_model_server.py --host 0.0.0.0 --port 9009
 ```
 ⏳ Loading External Model...
 ✅ Model Loaded Successfully!
-🚀 TravelUAV Model Server running on 0.0.0.0:9009
+🚀 TravelUAV Model Server (FastAPI) running on 0.0.0.0:9009
 📡 Endpoints:
    - POST /reset       : Reset episode state
-   - POST /act         : Single inference
-   - POST /act_batch   : Batch inference
+   - POST /act         : Single inference (A标准 [N,4] 动作)
    - GET  /health      : Health check
 ```
 
-### 3. 运行Client（TravelUAV Benchmark侧）
+### 2. 运行Client（TravelUAV Benchmark侧）
 
 ```bash
 cd /home/yyx/TravelUAV
@@ -211,26 +227,6 @@ python src/vlnce_src/eval_http.py \
 **参数说明**:
 - `--server_url`: 外部模型服务器地址
 - `--timeout`: HTTP请求超时时间（秒）
-
----
-
-## 📂 文件结构
-
-```
-TravelUAV/
-├── src/
-│   ├── model_wrapper/
-│   │   └── http_client.py          # HTTP客户端实现
-│   └── vlnce_src/
-│       ├── eval.py                 # 原始评测脚本（本地模型）
-│       └── eval_http.py            # HTTP评测脚本（外部模型）
-│
-├── server/
-│   └── travel_model_server.py      # 外部模型服务器模板
-│
-└── docs/
-    └── API_INTERFACE.md             # 本文档
-```
 
 ---
 
@@ -266,27 +262,26 @@ json_numpy.patch()
 
 # 测试reset
 resp = requests.post("http://127.0.0.1:9009/reset",
-    data=json_numpy.dumps({"type": "reset", "env_id": 0}),
+    data=json_numpy.dumps({"env_id": 0}),
     headers={"Content-Type": "application/json"})
 print(resp.json())
 
-# 测试act
+# 测试act (A 标准格式)
 obs = {
     "rgb": np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8),
-    "instruction": "Test",
-    "current_position": [0, 0, 1.5],
-    "current_rotation": np.eye(3).tolist(),
-    "target_position": [5, 5, 1.5],
-    "history_positions": [[0, 0, 1.5]],
-    "initial_position": [0, 0, 1.5],
-    "initial_rotation": np.eye(3).tolist(),
-    "timestep": 0
+    "depth": np.random.rand(480, 640).astype(np.float32),
+    "instruction": "Fly forward",
+    "step": 0,
+    "compass": np.array([0.0], dtype=np.float32),
+    "gps": np.array([0.0, 0.0], dtype=np.float32),
+    "collision": False
 }
 
 resp = requests.post("http://127.0.0.1:9009/act",
-    data=json_numpy.dumps({"observation": obs}),
+    data=json_numpy.dumps(obs),
     headers={"Content-Type": "application/json"})
 print(json_numpy.loads(resp.text))
+# 输出: {"action": [[dx, dy, dz, dyaw], ...]}
 ```
 
 ### 3. 查看Client日志
@@ -310,29 +305,45 @@ print(json_numpy.loads(resp.text))
 3. 使用WebSocket长连接
 4. 部署在同一台机器上（localhost）
 
-### Q2: Server端需要计算rot_to_targets吗？
+### Q2: 模型需要 target_position 怎么办？
 
-**A**: 是的，Server端需要自行计算旋转矩阵。参考 `travel_util.py` 中的 `rotation_matrix_from_vector` 函数。
+**A**: A 标准 obs 的 7+1 字段中不包含 `target_position`。Client 端可以在构造 obs 时将 `target_position` 作为额外可选字段附加，Server 端透传给模型。
 
-### Q3: 如何处理多视角图像？
+### Q3: 如何调整 Buffer K 值？
 
-**A**: 当前Client只发送前视相机图像。如果需要多视角，可以修改 `http_client.py` 中的 `_extract_observation` 方法。
+**A**: 在初始化 `HttpClient` 时设置 `k_exec_steps` 参数。初始 K=1（每步都请求），验证正确性后可逐步增大 K 以减少 HTTP 请求次数。
 
-### Q4: 如何支持批量推理？
+### Q4: Server 返回 N=0 动作怎么办？
 
-**A**: 实现 `/act_batch` 接口，一次处理多个观测。需要修改Client端的 `query_batch` 方法。
+**A**: Client 端会抛出 `ValueError: Server returned empty action list (N=0), this is an error`。Server 必须返回至少一个动作（N >= 1）。
 
 ---
 
 ## 📚 参考资料
 
 - **json_numpy文档**: https://pypi.org/project/json-numpy/
-- **Flask文档**: https://flask.palletsprojects.com/
+- **FastAPI文档**: https://fastapi.tiangolo.com/
+- **uvicorn文档**: https://www.uvicorn.org/
 - **AirSim文档**: https://microsoft.github.io/AirSim/
 
 ---
 
 ## 📝 更新日志
+
+### v2.1 (2026-03-10)
+- 移除 `assist_notice` 字段，碰撞检测完全依赖 AirSim 仿真器
+- 添加 `episode_id` 字段用于 Episode 标识
+- 支持动态动作数量 N（由 Server 返回的 action 数组长度决定）
+- 停止判定改为遍历检查每一个动作，遇到停止动作后停止遍历
+- Buffer 根据 Server 返回的 N 值动态取出相应数量的动作
+
+### v2.0 (2026-03-04)
+- 对齐 Isaac-Drone-Navigation-Benchmark 接口标准
+- Act 接口 Request 改为 A 标准 7+1 字段
+- Act 接口 Response 改为 `{"action": ndarray[N,4]}` 格式
+- 停止信号改为隐式判定（位移 < 阈值）
+- 框架从 Flask 迁移到 FastAPI + uvicorn
+- 坐标系明确为 NED
 
 ### v1.0 (2026-02-03)
 - 初始版本

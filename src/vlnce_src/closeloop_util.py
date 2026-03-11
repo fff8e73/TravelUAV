@@ -11,6 +11,42 @@ import torch.backends.cudnn as cudnn
 from src.vlnce_src.env_uav import AirVLNENV, RGB_FOLDER, DEPTH_FOLDER
 
 
+# 视频录制参数
+VIDEO_FPS = 10
+VIDEO_CODEC = 'mp4v'
+FRONT_CAMERA_INDEX = 0  # frontcamera 在 RGB_FOLDER 中的索引
+
+
+class VideoRecorder:
+    """视频录制器，用于录制无人机第一视角视频"""
+
+    def __init__(self, save_path, width=256, height=256, fps=10):
+        self.save_path = save_path
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self.writer = None
+        self._init_writer()
+
+    def _init_writer(self):
+        fourcc = cv2.VideoWriter_fourcc(*VIDEO_CODEC)
+        os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
+        self.writer = cv2.VideoWriter(self.save_path, fourcc, self.fps, (self.width, self.height))
+
+    def write_frame(self, frame):
+        """写入单帧"""
+        if self.writer is not None and self.writer.isOpened():
+            # 将 RGB 转换为 BGR（OpenCV 使用 BGR）
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            self.writer.write(frame_bgr)
+
+    def release(self):
+        """释放资源"""
+        if self.writer is not None:
+            self.writer.release()
+            self.writer = None
+
+
 def setup(dagger_it=0, manual_init_distributed_mode=False):
     if not manual_init_distributed_mode:
         init_distributed_mode()
@@ -221,10 +257,9 @@ class DaggerBatchState:
                     
                     
 class EvalBatchState:
-    def __init__(self, batch_size, env_batchs, env, assist):
+    def __init__(self, batch_size, env_batchs, env):
         self.batch_size = batch_size
         self.eval_env = env
-        self.assist = assist
         self.episodes = [[] for _ in range(batch_size)]
         self.target_positions = [b['object_position'] for b in env_batchs]
         self.object_infos = [self._get_object_info(b) for b in env_batchs]
@@ -239,7 +274,10 @@ class EvalBatchState:
         self.skips = [False] * batch_size
         self.distance_to_ends = [[] for _ in range(batch_size)]
         self.envs_to_pause = []
-        
+
+        # 初始化视频录制器
+        self.video_recorders = [None] * batch_size
+
         self._initialize_batch_data()
 
     def _get_object_info(self, batch):
@@ -253,32 +291,50 @@ class EvalBatchState:
     def _initialize_batch_data(self):
         outputs = self.eval_env.reset()
         observations, self.dones, self.collisions, self.oracle_success = [list(x) for x in zip(*outputs)]
-        
+
         for i in range(self.batch_size):
             if i in self.envs_to_pause:
                 continue
             self.episodes[i].append(observations[i][-1])
             self.distance_to_ends[i].append(self._calculate_distance(observations[i][-1], self.target_positions[i]))
 
+            # 初始化视频录制器并录制第一帧
+            traj_name = self.ori_data_dirs[i].split('/')[-1]
+            video_path = os.path.join(args.eval_save_path, traj_name + '_fpv.mp4')
+            self.video_recorders[i] = VideoRecorder(video_path)
+
+            # 录制前视相机视频
+            if self.video_recorders[i] is not None:
+                rgb_record = observations[i][-1].get('rgb_record')
+                if rgb_record is not None and len(rgb_record) > FRONT_CAMERA_INDEX:
+                    front_image = rgb_record[FRONT_CAMERA_INDEX]
+                    if front_image is not None:
+                        self.video_recorders[i].write_frame(front_image)
+
     def _calculate_distance(self, observation, target_position):
         return np.linalg.norm(np.array(observation['sensors']['state']['position']) - np.array(target_position))
 
     def update_from_env_output(self, outputs):
         observations, self.dones, self.collisions, self.oracle_success = [list(x) for x in zip(*outputs)]
-        self.collisions, self.dones = self.assist.check_collision_by_depth(self.episodes, observations, self.collisions, self.dones)
-        
+
         for i in range(self.batch_size):
             if i in self.envs_to_pause:
                 continue
             for j in range(len(observations[i])):
                 self.episodes[i].append(observations[i][j])
+
+            # 录制前视相机视频（最新帧）
+            if self.video_recorders[i] is not None:
+                rgb_record = observations[i][-1].get('rgb_record')
+                if rgb_record is not None and len(rgb_record) > FRONT_CAMERA_INDEX:
+                    front_image = rgb_record[FRONT_CAMERA_INDEX]
+                    if front_image is not None:
+                        self.video_recorders[i].write_frame(front_image)
+
             self.distance_to_ends[i].append(self._calculate_distance(observations[i][-1], self.target_positions[i]))
             if target_distance_increasing_for_10frames(self.distance_to_ends[i]):
                 self.collisions[i] = True
                 self.dones[i] = True
-
-    def get_assist_notices(self):
-        return self.assist.get_assist_notice(self.episodes, self.trajs, self.object_infos, self.target_positions)
 
     def update_metric(self):
         for i in range(self.batch_size):
@@ -312,4 +368,10 @@ class EvalBatchState:
                 save_to_dataset_eval(self.episodes[i], new_traj_dir, self.ori_data_dirs[i])
                 self.skips[i] = True
                 print(i, " has finished!")
+
+                # 释放视频录制器
+                if self.video_recorders[i] is not None:
+                    self.video_recorders[i].release()
+                    self.video_recorders[i] = None
+                    print(i, " video saved!")
         return np.array(self.skips).all()

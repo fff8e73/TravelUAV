@@ -33,4 +33,5 @@ ckpts*
 *.ipynb
 src/model_wrapper/utils/GroundingDINO/groundingdino_swint_ogc.pth
 src/model_wrapper/utils/__pycache__
-
+docs/eval_video_recording_plan.md
+docs/REFACTOR_PLAN.md
