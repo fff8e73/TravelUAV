@@ -417,7 +417,10 @@ class AirVLNENV:
                 waypoints_args[index_1].append(waypoints_list[cnt])
                 cnt += 1
         start_states = self._get_current_state()
+        sim_start = time.perf_counter()
         results = self.simulator_tool.move_path_by_waypoints(waypoints_list=waypoints_args, start_states=start_states)
+        sim_elapsed = time.perf_counter() - sim_start
+        print(f"[Env] move_path_by_waypoints batch={self.batch_size} elapsed={sim_elapsed:.3f}s")
         if results is None:
             raise Exception('move on path error.')
         batch_results = []

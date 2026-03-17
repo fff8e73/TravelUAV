@@ -47,7 +47,7 @@ python -u $root_dir/src/vlnce_src/eval_http.py \
     --maxWaypoints 200 \
     --activate_maps NewYorkCity \
     --dataset_path /sim/data/TravelUAV_data/extracted/ \
-    --eval_save_path /sim/data/TravelUAV_data/eval_closeloop/eval_http_test \
+    --eval_save_path /sim/data/TravelUAV_data/eval_closeloop/eval_http_test_video \
     --eval_json_path $data_dir/uav_dataset/seen_valset.json \
     --map_spawn_area_json_path $data_dir/meta/map_spawnarea_info.json \
     --object_name_json_path $data_dir/meta/object_description.json

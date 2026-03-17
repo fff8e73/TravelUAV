@@ -111,30 +111,21 @@ async def act(request: Request):
     # [MOCK IMPLEMENTATION] 测试用的 Mock 实现
     # ========================================================
     # 模拟模型输出 [N, 4] 相对动作
-    # N = 16 (假设模型一次输出 16 步动作)
-    N = 16
+    # N = 8 (前7步运动 + 最后1步stop)
+    N = 8
     pred_actions = np.zeros((N, 4), dtype=np.float32)
 
-    # 复杂的测试逻辑：根据 step 生成多样化的动作序列
+    # 获取当前步数，用于随机噪声
     step = obs.get("step", 0)
 
-    # 模式1：每 20 步改变一次方向（前→左→右→后→前...循环）
-    direction_cycle = (step // 20) % 4  # 0,1,2,3 循环
+    # 随机噪声（模拟真实模型的输出变化）
+    np.random.seed(step)
+    random_noise = np.random.randn(N, 4) * 0.01
 
-    # 模式2：每 50 步执行一次"停止"（小位移）来测试 stop 判定
-    is_stop_phase = (step % 50) >= 45  # step 45-49 为停止阶段
-
-    # 模式3：偶尔加入高度变化（每 30 步上升/下降）
-    height_change = (step % 60) < 30  # 前30步上升，后30步下降
-
-    # 模式4：加入微小的随机扰动（模拟真实模型的输出变化）
-    np.random.seed(step)  # 用 step 作为种子，保证可复现
-    random_noise = np.random.randn(N, 4) * 0.01  # 微小噪声
-
+    # 在 8 步内部进行方向循环和高度变化
     for i in range(N):
-        if is_stop_phase:
-            # 停止阶段：返回极小的位移（测试 stop 判定）
-            # 位移 < 1e-5 会被识别为 stop
+        # 最后一步（第8步）返回 stop 信号
+        if i == N - 1:
             pred_actions[i] = [
                 1e-6,   # dx (几乎为0)
                 1e-6,   # dy (几乎为0)
@@ -142,25 +133,20 @@ async def act(request: Request):
                 0.0     # dyaw
             ]
         else:
-            # 正常运动阶段
-            if direction_cycle == 0:
-                # 向前
-                dx, dy = 0.1, 0.0
-            elif direction_cycle == 1:
-                # 向左
-                dx, dy = 0.0, 0.1
-            elif direction_cycle == 2:
-                # 向后
-                dx, dy = -0.1, 0.0
+            # 前7步：方向循环 + 高度交替
+            # 方向循环：每 4 步一循环（前→左→后→右）
+            direction_idx = i % 4
+            if direction_idx == 0:
+                dx, dy, dz= 0.5, 0.0, 0.0  # 向前
+            elif direction_idx == 1:
+                dx, dy, dz= 0.0, 0.5, 0.0  # 向左
+            elif direction_idx == 2:
+                dx, dy, dz= 0.0, 0.0, 0.5  # 向上
             else:
-                # 向右
-                dx, dy = 0.0, -0.1
-
-            # 高度变化
-            dz = 0.02 if height_change else -0.02
+                dx, dy, dz= 0.0, -0.5, 0.0  # 向右
 
             # 微小偏航角变化
-            dyaw = 0.01 * ((step % 10) - 5) / 5  # -0.01 到 0.01 之间变化
+            dyaw = 0.05 * ((step % 10) - 5) / 5
 
             # 加入随机噪声
             pred_actions[i] = [

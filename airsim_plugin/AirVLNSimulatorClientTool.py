@@ -321,15 +321,28 @@ class AirVLNSimulatorClientTool:
                                 yaw_mode=yaw_mode, 
                                 lookahead=lookahead, 
                                 adaptive_lookahead=adaptive_lookahead)
+            # 仅跟踪前几个 waypoint 的到达过程（避免一次性等待整条路径）。
             target_idx = min(5, len(path))
             current_idx = 0
-            pos_queue = deque(maxlen=20)
+            # 轮询采样间隔（秒）。
+            sample_interval = 0.05
+            # 卡住检测窗口时长（秒）：用窗口首尾位移判断是否几乎未移动。
+            stuck_window_sec = 2.0
+            # 起步宽限期（秒）：起步阶段速度建立慢，不做 stuck 判定。
+            startup_grace_sec = 1.0
+            # 在检测窗口内最小位移阈值（米），低于该值判定为 stuck。
+            stuck_min_delta = 0.05
+            # 保存最近一段时间的位置历史，长度由窗口时长/采样间隔计算。
+            pos_queue = deque(maxlen=max(2, int(stuck_window_sec / sample_interval)))
             start_time = time.perf_counter()
             collision = False
+            # 记录“当前目标点”的最小距离；若后续开始增大，说明已越过该目标点。
             distance = 10000
             while True:
-                time.sleep(0.005)
-                if time.perf_counter() - start_time > 5:
+                time.sleep(sample_interval)
+                elapsed = time.perf_counter() - start_time
+                # 单次 move_path 保护超时，防止线程长时间卡死。
+                if elapsed > 5:
                     return None
                 if current_idx >= len(path):
                     airsim_client.simPause(True)
@@ -339,15 +352,16 @@ class AirVLNSimulatorClientTool:
                 imu_info = copy.deepcopy(imu_sensor.retrieve())
                 position = np.array(state_info['position'])
                 pos_queue.append(position)
-                if len(pos_queue) == pos_queue.maxlen:
-                    recent_loc = position
-                    history_loc = pos_queue.popleft()
-                    delta_distance = np.linalg.norm(history_loc -recent_loc)
-                    if delta_distance < 0.1:
-                        print('move on path api: stuck max len')
+                # 仅在宽限期结束且窗口满时进行 stuck 检测。
+                if elapsed > startup_grace_sec and len(pos_queue) == pos_queue.maxlen:
+                    # 使用窗口首尾位移衡量“这段时间是否真的移动过”。
+                    delta_distance = np.linalg.norm(pos_queue[-1] - pos_queue[0])
+                    if delta_distance < stuck_min_delta:
+                        print(f'move on path api: stuck max len (delta={delta_distance:.4f}, window={stuck_window_sec}s)')
                         collision = True
                         break
                 new_distance = np.linalg.norm(position - np.array([target.x_val, target.y_val, target.z_val]))
+                # 若距离开始回升，视为已通过当前目标点，切换到下一个 waypoint。
                 if new_distance > distance:
                     results.append({'sensors': {'state': state_info, 'imu': imu_info}})
                     current_idx += 1
@@ -355,6 +369,7 @@ class AirVLNSimulatorClientTool:
                         airsim_client.simPause(True)
                         break
                     else:
+                        # 重置为大值，开始统计下一个目标点的最小距离。
                         distance = 10000
                 else:
                     distance = new_distance

@@ -73,8 +73,20 @@
 **Request** (A 标准 7+1 字段):
 ```json
 {
-    "rgb": [[R, G, B], ...],
-    "depth": [[depth], ...],
+    "rgb": [
+        [[[R, G, B], ...], ...],  // frontcamera, shape: (256, 256, 3)
+        [[[R, G, B], ...], ...],  // leftcamera
+        [[[R, G, B], ...], ...],  // rightcamera
+        [[[R, G, B], ...], ...],  // rearcamera
+        [[[R, G, B], ...], ...]   // downcamera
+    ],
+    "depth": [
+        [[depth], ...],  // frontcamera, shape: (256, 256), uint8
+        [[depth], ...],  // leftcamera
+        [[depth], ...],  // rightcamera
+        [[depth], ...],  // rearcamera
+        [[depth], ...]   // downcamera
+    ],
     "instruction": "Fly to the red ball",
     "step": 10,
     "compass": [0.5],
@@ -88,8 +100,8 @@
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `rgb` | numpy.ndarray | 是 | RGB图像，shape: [H, W, 3]，uint8 |
-| `depth` | numpy.ndarray | 否 | 深度图，shape: [H, W]，float32 |
+| `rgb` | List[np.ndarray] | 是 | 5个相机的RGB图像列表，每个shape: (256, 256, 3)，uint8<br>索引: [0]前视 [1]左视 [2]右视 [3]后视 [4]下视 |
+| `depth` | List[np.ndarray] | 否 | 5个相机的深度图列表，每个shape: (256, 256)，uint8<br>索引: [0]前视 [1]左视 [2]右视 [3]后视 [4]下视 |
 | `instruction` | str | 是 | 自然语言指令 |
 | `step` | int | 是 | 当前步数 |
 | `compass` | numpy.ndarray | 否 | 相对朝向，shape: [1]，弧度，从 IMU rotation 提取 yaw |

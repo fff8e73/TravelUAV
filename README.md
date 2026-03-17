@@ -3,7 +3,7 @@
 ## Contents
 
 - [简介](#简介)
-- [前置要求](#安装依赖)
+- [前置准备](#前置准备)
 - [快速开始](#快速开始)
 - [详细接口标准](#详细接口标准)
 - [完整工作流程](#完整工作流程)
@@ -29,7 +29,8 @@
 
 ---
 
-## 安装依赖
+## 前置准备
+### 安装依赖
 
 ```bash
 conda create -n openuav python=3.10 -y
@@ -42,6 +43,48 @@ pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorc
 pip install -r requirements_interface.txt
 ```
 
+### 数据集下载
+```bash
+cd /sim/data
+mkdir -p TravelUAV_data
+export HF_ENDPOINT=https://hf-mirror.com
+# 下载数据集分割信息
+nohup huggingface-cli download wangxiangyu0814/TravelUAV_data_json --repo-type dataset --local-dir /sim/data/TravelUAV_data/TravelUAV_data_json --force-download --resume-download
+# 下载数据集
+nohup huggingface-cli download wangxiangyu0814/TravelUAV --repo-type dataset --local-dir /sim/data/TravelUAV_data --force-download --resume-download
+```
+- 据集分割信息路径：/sim/data/TravelUAV_data/TravelUAV_data_json
+- 数据集路径：/sim/data/TravelUAV_data/extracted
+
+### 仿真环境下载
+```bash
+cd /sim/data/TravelUAV_data/
+mkdir -p sim_envs
+cd sim_envs
+# 后台运行并实时查看日志
+HF_ENDPOINT=https://hf-mirror.com huggingface-cli download \
+  wangxiangyu0814/TravelUAV_env \
+  --repo-type dataset \
+  --local-dir /sim/data/TravelUAV_data/sim_envs \
+  --force-download \
+  --resume-download \
+  --include "*" > sim_envs.log 2>&1 &
+# 实时查看日志（监控下载进度和错误）
+tail -f sim_envs.log
+
+# 解压下载的仿真环境包
+7z x carla_town_envs.zip -o./ -aoa
+7z x closeloop_envs.zip -o./ -aoa
+mkdir -p extra_envs
+7z x BattlefieldKitDesert.zip -o./extra_envs/ -aoa
+7z x BrushifyCountryRoads.zip -o./extra_envs/ -aoa
+7z x BrushifyForestPack.zip -o./extra_envs/ -aoa
+7z x BrushifyUrban.zip -o./extra_envs/ -aoa
+7z x Japanese_Street.zip -o./extra_envs/ -aoa
+7z x London_Street.zip -o./extra_envs/ -aoa
+7z x NordicHarbour.zip -o./extra_envs/ -aoa
+7z x WesterTown.zip -o./extra_envs/ -aoa
+```
 ---
 
 ## 快速开始
@@ -53,7 +96,7 @@ pip install -r requirements_interface.txt
 ```bash
 conda activate openuav
 cd ~/TravelUAV/airsim_plugin
-python AirVLNSimulatorServerTool.py --port 30000 --root_path /sim/data/TravelUAV_data/sim_envs
+nohup python AirVLNSimulatorServerTool.py --port 30000 --root_path /sim/data/TravelUAV_data/sim_envs > sim.log 2>&1 &
 ```
 
 **说明**:
@@ -67,7 +110,7 @@ python AirVLNSimulatorServerTool.py --port 30000 --root_path /sim/data/TravelUAV
 ```bash
 conda activate openuav
 cd ~/TravelUAV
-python server/travel_model_server.py --host 0.0.0.0 --port 9010
+nohup python server/travel_model_server.py --host 0.0.0.0 --port 9010 > server.log 2>&1 &
 ```
 
 **预期输出**:
@@ -94,10 +137,9 @@ curl http://127.0.0.1:9010/health
 ```bash
 conda activate openuav
 cd ~/TravelUAV
-bash scripts/eval_http.sh > eval_http.log
+nohup bash scripts/eval_http.sh > eval_http_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 bash scripts/metrics.sh
 ```
-
 ---
 
 ## 详细接口标准

@@ -1,3 +1,13 @@
+"""
+闭环导航训练/评测工具集合。
+
+职责：
+- 环境初始化与端口检查；
+- 轨迹、图像与元信息落盘；
+- DAgger/Eval 两套 batch 状态机；
+- 评测时距离与终止条件管理（含视频录制）。
+"""
+
 
 import json
 import random
@@ -11,7 +21,9 @@ import torch.backends.cudnn as cudnn
 from src.vlnce_src.env_uav import AirVLNENV, RGB_FOLDER, DEPTH_FOLDER
 
 
-# 视频录制参数
+# =======================
+# 视频录制相关常量
+# =======================
 VIDEO_FPS = 10
 VIDEO_CODEC = 'mp4v'
 FRONT_CAMERA_INDEX = 0  # frontcamera 在 RGB_FOLDER 中的索引
@@ -20,25 +32,42 @@ FRONT_CAMERA_INDEX = 0  # frontcamera 在 RGB_FOLDER 中的索引
 class VideoRecorder:
     """视频录制器，用于录制无人机第一视角视频"""
 
-    def __init__(self, save_path, width=256, height=256, fps=10):
+    def __init__(self, save_path, fps=VIDEO_FPS):
         self.save_path = save_path
-        self.width = width
-        self.height = height
         self.fps = fps
         self.writer = None
-        self._init_writer()
+        self.width = None
+        self.height = None
 
-    def _init_writer(self):
+    def _init_writer(self, width, height):
+        self.width = int(width)
+        self.height = int(height)
         fourcc = cv2.VideoWriter_fourcc(*VIDEO_CODEC)
         os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
         self.writer = cv2.VideoWriter(self.save_path, fourcc, self.fps, (self.width, self.height))
 
     def write_frame(self, frame):
         """写入单帧"""
-        if self.writer is not None and self.writer.isOpened():
-            # 将 RGB 转换为 BGR（OpenCV 使用 BGR）
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            self.writer.write(frame_bgr)
+        if frame is None:
+            return
+        if len(frame.shape) != 3 or frame.shape[2] != 3:
+            return
+
+        if self.writer is None:
+            h, w = frame.shape[:2]
+            self._init_writer(w, h)
+
+        if self.writer is None or not self.writer.isOpened():
+            return
+
+        if frame.dtype != np.uint8:
+            frame = np.clip(frame, 0, 255).astype(np.uint8)
+
+        if frame.shape[1] != self.width or frame.shape[0] != self.height:
+            frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        self.writer.write(frame_bgr)
 
     def release(self):
         """释放资源"""
@@ -48,6 +77,12 @@ class VideoRecorder:
 
 
 def setup(dagger_it=0, manual_init_distributed_mode=False):
+    """
+    统一初始化运行时随机性与分布式上下文。
+
+    - dagger_it 会参与 seed，避免不同迭代数据完全一致；
+    - 若 manual_init_distributed_mode=False，则自动初始化分布式环境。
+    """
     if not manual_init_distributed_mode:
         init_distributed_mode()
 
@@ -60,6 +95,7 @@ def setup(dagger_it=0, manual_init_distributed_mode=False):
     cudnn.deterministic = False
 
 def CheckPort():
+    """检查 DDP 主端口是否被占用。"""
     pid = FromPortGetPid(int(args.DDP_MASTER_PORT))
     if pid is not None:
         print('DDP_MASTER_PORT ({}) is being used'.format(args.DDP_MASTER_PORT))
@@ -68,10 +104,12 @@ def CheckPort():
     return True
 
 def initialize_env(dataset_path, save_path, train_json_path, activate_maps=[]):
+    """构建训练/采集环境。"""
     train_env = AirVLNENV(batch_size=args.batchSize, dataset_path=dataset_path, save_path=save_path, eval_json_path=train_json_path, activate_maps=activate_maps)
     return train_env
 
 def initialize_env_eval(dataset_path, save_path, eval_json_path):
+    """构建评测环境。"""
     train_env = AirVLNENV(
         batch_size=args.batchSize,
         dataset_path=dataset_path,
@@ -82,6 +120,7 @@ def initialize_env_eval(dataset_path, save_path, eval_json_path):
     return train_env
 
 def save_to_dataset_dagger(episodes, path, dagger_it, teacher_after_collision_steps):
+    """保存 DAgger 轨迹（图像+日志+元信息）。"""
     ori_path = path
     path_parts = ori_path.strip('/').split('/')
     map_name, seq_name = path_parts[-2], path_parts[-1]
@@ -103,6 +142,7 @@ def save_to_dataset_dagger(episodes, path, dagger_it, teacher_after_collision_st
                    'seq_name': seq_name}, f)
         
 def save_to_dataset_eval(episodes, path, ori_traj_dir):
+    """保存 Eval 轨迹（图像+日志+原始轨迹引用）。"""
     root_path = os.path.join(path)
     if not os.path.exists(root_path):
         os.makedirs(root_path)
@@ -120,6 +160,7 @@ def save_to_dataset_eval(episodes, path, ori_traj_dir):
         json.dump({'ori_traj_dir': ori_traj_dir}, f)
 
 def save_logs(episodes, trajectory_dir):
+    """将每帧传感器写入 log/*.json。"""
     save_dir = os.path.join(trajectory_dir, 'log')
     for idx, episode in enumerate(episodes):
         info = {'frame': idx, 'sensors': episode['sensors']}
@@ -127,6 +168,7 @@ def save_logs(episodes, trajectory_dir):
             json.dump(info, f)
 
 def save_images(episodes, trajectory_dir):
+    """将每帧 RGB/Depth 图像按相机目录保存。"""
     for idx, episode in enumerate(episodes):
         if 'rgb' in episode:
             for cid, camera_name in enumerate(RGB_FOLDER):
@@ -138,6 +180,7 @@ def save_images(episodes, trajectory_dir):
                 cv2.imwrite(os.path.join(trajectory_dir, camera_name, str(idx).zfill(6) + '.png'), image)
 
 def load_object_description():
+    """加载 object_name -> 文本描述映射。"""
     object_desc_dict = dict()
     with open(args.object_name_json_path, 'r') as f:
         file = json.load(f)
@@ -146,6 +189,11 @@ def load_object_description():
     return object_desc_dict
 
 def target_distance_increasing_for_10frames(lst):
+    """
+    判定最近 10 次距离是否单调不下降。
+
+    注意：该函数把“持平”也视为满足条件（只要没有变小）。
+    """
     if len(lst) < 10:
         return False
     sublist = lst[-10:]
@@ -155,6 +203,7 @@ def target_distance_increasing_for_10frames(lst):
     return True
 
 class BatchIterator:
+    """把 AirVLNENV 封装成可计数/可迭代的 batch 迭代器。"""
     def __init__(self, env: AirVLNENV):
         self.env = env
     
@@ -174,6 +223,7 @@ class BatchIterator:
         return batch
 
 class DaggerBatchState:
+    """DAgger 模式下的 batch 状态容器与终止控制器。"""
     def __init__(self, bs, env_batchs, train_env):
         self.bs = bs
         self.episodes = [[] for _ in range(bs)]
@@ -193,6 +243,12 @@ class DaggerBatchState:
         self.trajs = [b['trajectory'] for b in env_batchs]
         
     def update_from_env_output(self, outputs, check_collision_function=None):
+        """
+        合并环境输出到当前 batch 状态。
+
+        - episodes 追加最新观测；
+        - oracle_success 会强制将 done 置 True。
+        """
         observations, dones, collisions, oracle_success = [list(x) for x in zip(*outputs)]
         if check_collision_function is not None:
             collisions, dones = check_collision_function(self.episodes, observations, collisions, dones)
@@ -209,6 +265,11 @@ class DaggerBatchState:
     
     
     def check_dagger_batch_termination(self, dagger_it):
+        """
+        检查 DAgger batch 是否终止，并按规则保存轨迹。
+
+        碰撞轨迹会做截断，过短样本会直接跳过不保存。
+        """
         for i in range(self.bs):
             ep = self.episodes[i]
             if not self.skips[i] and ((self.dones[i] and not self.collisions[i]) or (len(self.episodes[i]) >= args.maxWaypoints * 5 // 10 and self.collisions[i])):
@@ -224,6 +285,9 @@ class DaggerBatchState:
         return False 
     
     def dagger_step_back(self):
+        """
+        DAgger 回退策略：碰撞后回退到历史帧并切换 teacher 控制。
+        """
         # if collisions without teacher action, return to last 2 frame and move with teacher action
         for i in range(self.bs):
             if self.dones[i] or i in self.envs_to_pause:
@@ -257,6 +321,7 @@ class DaggerBatchState:
                     
                     
 class EvalBatchState:
+    """Eval 模式下的 batch 状态容器（含视频录制与终止判定）。"""
     def __init__(self, batch_size, env_batchs, env):
         self.batch_size = batch_size
         self.eval_env = env
@@ -277,6 +342,8 @@ class EvalBatchState:
 
         # 初始化视频录制器
         self.video_recorders = [None] * batch_size
+        self.video_paths = [None] * batch_size
+        self.traj_names = [None] * batch_size
 
         self._initialize_batch_data()
 
@@ -289,6 +356,9 @@ class EvalBatchState:
             return {item['object_name']: item['object_desc'] for item in json.load(f)}
 
     def _initialize_batch_data(self):
+        """
+        执行环境 reset，并初始化每个样本的 episode 缓存、距离序列与视频录制器。
+        """
         outputs = self.eval_env.reset()
         observations, self.dones, self.collisions, self.oracle_success = [list(x) for x in zip(*outputs)]
 
@@ -296,12 +366,15 @@ class EvalBatchState:
             if i in self.envs_to_pause:
                 continue
             self.episodes[i].append(observations[i][-1])
+            # 记录当前帧到目标距离，用于停机/退化判定。
             self.distance_to_ends[i].append(self._calculate_distance(observations[i][-1], self.target_positions[i]))
 
             # 初始化视频录制器并录制第一帧
             traj_name = self.ori_data_dirs[i].split('/')[-1]
-            video_path = os.path.join(args.eval_save_path, traj_name + '_fpv.mp4')
-            self.video_recorders[i] = VideoRecorder(video_path)
+            self.traj_names[i] = traj_name
+            video_path = os.path.join(args.eval_save_path, '_tmp_videos', traj_name + '_fpv.mp4')
+            self.video_paths[i] = video_path
+            self.video_recorders[i] = VideoRecorder(video_path, fps=VIDEO_FPS)
 
             # 录制前视相机视频
             if self.video_recorders[i] is not None:
@@ -312,9 +385,15 @@ class EvalBatchState:
                         self.video_recorders[i].write_frame(front_image)
 
     def _calculate_distance(self, observation, target_position):
+        """计算当前位置到目标点的欧式距离。"""
         return np.linalg.norm(np.array(observation['sensors']['state']['position']) - np.array(target_position))
 
     def update_from_env_output(self, outputs):
+        """
+        用环境返回更新 episode，并追加最新距离。
+
+        若最近 10 次距离单调不下降，则将样本标记为碰撞并结束。
+        """
         observations, self.dones, self.collisions, self.oracle_success = [list(x) for x in zip(*outputs)]
 
         for i in range(self.batch_size):
@@ -323,20 +402,29 @@ class EvalBatchState:
             for j in range(len(observations[i])):
                 self.episodes[i].append(observations[i][j])
 
-            # 录制前视相机视频（最新帧）
-            if self.video_recorders[i] is not None:
-                rgb_record = observations[i][-1].get('rgb_record')
-                if rgb_record is not None and len(rgb_record) > FRONT_CAMERA_INDEX:
-                    front_image = rgb_record[FRONT_CAMERA_INDEX]
-                    if front_image is not None:
-                        self.video_recorders[i].write_frame(front_image)
+            # 录制前视相机视频：每个 step 写入两帧（中间索引帧 + 最后一帧）
+            if self.video_recorders[i] is not None and len(observations[i]) > 0:
+                mid_idx = len(observations[i]) // 2
+                frame_candidates = [observations[i][mid_idx], observations[i][-1]]
 
+                for obs_item in frame_candidates:
+                    rgb_record = obs_item.get('rgb_record')
+                    if rgb_record is not None and len(rgb_record) > FRONT_CAMERA_INDEX:
+                        front_image = rgb_record[FRONT_CAMERA_INDEX]
+                        if front_image is not None:
+                            self.video_recorders[i].write_frame(front_image)
+
+            # 记录当前帧到目标距离，用于停机/退化判定。
             self.distance_to_ends[i].append(self._calculate_distance(observations[i][-1], self.target_positions[i]))
+            # 最近 10 帧距离不下降：认为陷入无效推进，提前终止该样本。
             if target_distance_increasing_for_10frames(self.distance_to_ends[i]):
                 self.collisions[i] = True
                 self.dones[i] = True
 
     def update_metric(self):
+        """
+        基于模型 stop 预测与距离阈值更新 success/early_end/done。
+        """
         for i in range(self.batch_size):
             if self.dones[i]:
                 continue
@@ -351,7 +439,11 @@ class EvalBatchState:
                     self.dones[i] = True
                     
     def check_batch_termination(self, t):
+        """
+        处理 batch 内已结束样本：保存轨迹、释放视频句柄，并返回 batch 是否全部完成。
+        """
         for i in range(self.batch_size):
+            # 达到最大步数时，强制标记为结束。
             if t == args.maxWaypoints:
                 self.dones[i] = True
             if self.dones[i] and not self.skips[i]:
@@ -373,5 +465,10 @@ class EvalBatchState:
                 if self.video_recorders[i] is not None:
                     self.video_recorders[i].release()
                     self.video_recorders[i] = None
-                    print(i, " video saved!")
+                if self.video_paths[i] is not None and os.path.exists(self.video_paths[i]):
+                    video_name = f"{self.traj_names[i] if self.traj_names[i] else 'trajectory'}.mp4"
+                    final_video_path = os.path.join(new_traj_dir, video_name)
+                    shutil.move(self.video_paths[i], final_video_path)
+                    self.video_paths[i] = None
+                    print(i, " video saved to ", final_video_path)
         return np.array(self.skips).all()
